@@ -6,75 +6,128 @@
 \usepackage{hyperref}
 \usepackage{float}
 \usepackage{multirow}
+\usepackage{array}
+\usepackage{enumitem}
 \title{Spectral Clustering: Theory, Algorithm, and Experiments}
-\author{Project writeup scaffold}
+\author{Python implementation and report scaffold for the course final project}
 \date{}
 
 \begin{document}
 \maketitle
 
 \section{Introduction}
-Spectral clustering is a graph-based clustering method that is especially effective when the geometry of the clusters is non-convex or when Euclidean centroids are a poor summary of the data. The core idea is to convert data points into a weighted graph, study the graph Laplacian, and recover a low-dimensional embedding from a small number of eigenvectors. Clusters are then extracted from that embedding, typically by $k$-means. The project brief asks for a theory summary, a clear algorithmic description with computational considerations, and experiments on multiple synthetic and real datasets, including comparisons with $k$-means and stress tests under noise. This report follows that structure.
+Spectral clustering is a graph-based clustering method that is especially attractive when cluster geometry is non-convex, curved, or better described by local neighborhood relations than by Euclidean centroids. The basic move is to convert data into a weighted graph, study the graph Laplacian, extract a small number of eigenvectors, and run a simple clustering method in that spectral embedding. We focus on the normalized spectral clustering algorithm of Ng, Jordan, and Weiss (NJW) \cite{ng2001spectral}, while relating it to the normalized-cut objective of Shi and Malik \cite{shi2000normalized} and the broader graph-Laplacian view in von Luxburg's tutorial \cite{vonluxburg2007tutorial}.
 
-\section{Theory summary}
-We focus on the normalized spectral clustering algorithm of Ng, Jordan, and Weiss \cite{ng2001spectral}, while relating it to the normalized cut viewpoint of Shi and Malik \cite{shi2000normalized} and the broader graph Laplacian framework summarized by von Luxburg \cite{vonluxburg2007tutorial}.
+The project brief asks for three components: a theory summary, an algorithmic description including computational cost, and a data exploration section with synthetic and real datasets, comparisons with $k$-means, and noise robustness. This report follows that structure closely.
 
-Given data points $x_1,\dots,x_n$, construct a weighted undirected graph with affinity matrix $W \in \mathbb{R}^{n\times n}$, where $W_{ij}$ is large when $x_i$ and $x_j$ are similar. Let $D$ be the diagonal degree matrix with entries $D_{ii}=\sum_j W_{ij}$. The symmetric normalized Laplacian is
+\section{Theory}
+\subsection{Graph construction and Laplacians}
+Given data points $x_1,\dots,x_n \in \mathbb{R}^d$, we build a weighted undirected graph with affinity matrix $W \in \mathbb{R}^{n\times n}$, where $W_{ij}$ is large when $x_i$ and $x_j$ are similar. Let $D$ be the diagonal degree matrix, $D_{ii} = \sum_j W_{ij}$. The two most common Laplacians are the unnormalized Laplacian
+\[
+L = D - W
+\]
+and the symmetric normalized Laplacian
 \[
 L_{\mathrm{sym}} = I - D^{-1/2} W D^{-1/2}.
 \]
-The bottom eigenvectors of $L_{\mathrm{sym}}$ reveal approximate connected components or nearly disconnected subgraphs. Intuitively, if the graph consists of $k$ well-separated clusters, then there are $k$ small eigenvalues and the corresponding eigenvectors are approximately piecewise constant on those clusters.
+When the graph has $k$ connected components, $L_{\mathrm{sym}}$ has exactly $k$ zero eigenvalues, and the associated eigenvectors are piecewise constant on those components. In the nearly-disconnected case, the bottom $k$ eigenvectors remain approximately piecewise constant, which is the spectral signal exploited by clustering algorithms \cite{vonluxburg2007tutorial}.
 
-This picture connects to the normalized cut objective. For a partition $A_1,\dots,A_k$, one wants low cross-cluster weight but also avoids trivial solutions by normalizing by cluster volume. The continuous relaxation of this discrete partitioning problem leads to an eigenvector problem involving the normalized Laplacian. This is the main conceptual reason spectral clustering works.
+\subsection{From normalized cut to an eigenproblem}
+For a two-way partition $(A, \bar A)$, the cut is
+\[
+\mathrm{cut}(A,\bar A) = \sum_{i\in A,\,j\in \bar A} W_{ij}.
+\]
+Minimizing cut alone is degenerate: it prefers isolating tiny sets. Shi and Malik proposed the normalized cut objective
+\[
+\mathrm{Ncut}(A,\bar A)
+=
+\frac{\mathrm{cut}(A,\bar A)}{\mathrm{vol}(A)}
++
+\frac{\mathrm{cut}(A,\bar A)}{\mathrm{vol}(\bar A)},
+\qquad
+\mathrm{vol}(A)=\sum_{i\in A} D_{ii},
+\]
+which balances low inter-cluster connectivity against cluster size \cite{shi2000normalized}. The exact optimization is discrete and NP-hard in general, so spectral clustering uses a continuous relaxation. That relaxation leads to a generalized eigenvalue problem and, after normalization, to the bottom eigenvectors of a Laplacian matrix. This is the main mathematical reason spectral clustering works: difficult discrete partitioning is replaced by a tractable linear algebra problem \cite{shi2000normalized,vonluxburg2007tutorial}.
 
-Relative to classical $k$-means, the advantage is that the graph can encode local geometry, so curved manifolds such as the two-moons or concentric-circles datasets are no longer forced into convex Voronoi cells in the original feature space.
+\subsection{Why NJW?}
+There are several common ``flavors'' of spectral clustering. Unnormalized methods work directly with $L=D-W$. Shi--Malik normalized cuts solve a generalized eigenproblem. NJW instead computes the top eigenvectors of a normalized affinity-like matrix, or equivalently the bottom eigenvectors of a normalized Laplacian, then normalizes rows and applies $k$-means \cite{ng2001spectral}. We chose NJW because it is simple, standard, easy to implement in Python, and closely tied to the normalized-cut relaxation while remaining computationally clean.
 
 \section{Algorithm}
-We implement the Ng--Jordan--Weiss algorithm.
+\subsection{Implemented method}
+Our implementation uses an $m$-nearest-neighbor graph with RBF weights:
+\[
+W_{ij} = \exp\!\bigl(-\gamma \lVert x_i-x_j\rVert_2^2\bigr)
+\]
+when $x_j$ is among the $m$ nearest neighbors of $x_i$. The scale parameter $\gamma$ is chosen from the median nonzero neighbor distance. The graph is then symmetrized.
 
-\paragraph{Input.} Data matrix $X \in \mathbb{R}^{n\times d}$, number of clusters $k$, number of neighbors $m$ for graph construction.
+\paragraph{Input.} Data matrix $X\in\mathbb{R}^{n\times d}$, number of clusters $k$, number of neighbors $m$.
 
-\paragraph{Output.} Cluster labels $\hat y_1,\dots,\hat y_n$.
+\paragraph{Output.} Predicted cluster labels $\hat y_1,\dots,\hat y_n$.
 
 \paragraph{Steps.}
-\begin{enumerate}
-    \item Construct a weighted $m$-nearest-neighbor graph. In our implementation, if $x_j$ is among the $m$ nearest neighbors of $x_i$, the edge weight is
-    \[
-    W_{ij}=\exp\!\left(-\gamma \|x_i-x_j\|_2^2\right),
-    \]
-    with $\gamma$ chosen from the median nonzero neighbor distance.
-    \item Symmetrize the graph by $W\leftarrow \max(W,W^\top)$.
+\begin{enumerate}[leftmargin=1.4em]
+    \item Build a sparse weighted $m$-nearest-neighbor graph.
     \item Form $L_{\mathrm{sym}} = I-D^{-1/2}WD^{-1/2}$.
-    \item Compute the eigenvectors corresponding to the $k$ smallest eigenvalues of $L_{\mathrm{sym}}$ and stack them row-wise into $U\in\mathbb{R}^{n\times k}$.
-    \item Normalize each row of $U$ to unit norm, obtaining $Y$.
+    \item Compute the $k$ eigenvectors associated with the smallest eigenvalues of $L_{\mathrm{sym}}$.
+    \item Stack them into $U\in\mathbb{R}^{n\times k}$ and row-normalize to obtain $Y$.
     \item Run $k$-means on the rows of $Y$.
 \end{enumerate}
 
-\paragraph{Computational cost.}
-If the graph is dense, building all pairwise distances costs $O(n^2 d)$ and storing the affinity matrix costs $O(n^2)$. With a sparse $m$-NN graph, storage drops to $O(mn)$. The dominant linear algebra cost is computing the first $k$ eigenvectors of the normalized Laplacian. For dense methods that is cubic in $n$, but sparse iterative eigensolvers are much cheaper in practice and depend on the number of nonzeros and the spectral gap. The final $k$-means step on the spectral embedding costs roughly $O(nktT)$ where $T$ is the number of Lloyd iterations.
+\subsection{Computational cost}
+There are three main costs.
+\begin{enumerate}[leftmargin=1.4em]
+    \item \textbf{Graph construction.} Exact pairwise distances would cost $O(n^2d)$, but our implementation uses a sparse $k$-NN graph so the stored graph has only $O(mn)$ nonzeros.
+    \item \textbf{Eigensolve.} This is the main bottleneck. Dense eigendecomposition is cubic in $n$, but sparse iterative eigensolvers scale much better in practice and depend strongly on the number of graph edges and the spectral gap \cite{vonluxburg2007tutorial,ng2001spectral}.
+    \item \textbf{$k$-means in spectral space.} Once the embedding is computed, the final step is cheap because the embedding has only $k$ columns.
+\end{enumerate}
+
+We measured these costs directly. On a two-moons benchmark, increasing $n$ from $150$ to $900$ increased the spectral pipeline runtime from $0.015$ s to $0.353$ s, while the $k$-means-only baseline remained around $0.013$--$0.016$ s. The eigensolver dominated the growth, while graph memory rose from about $24$ KiB to $161$ KiB for the sparse affinity matrix. Figure~\ref{fig:scaling} shows these trends.
 
 \section{Experimental design}
-The brief asks for at least three qualitatively different synthetic examples where the method should work, one or two where it should fail, comparisons to $k$-means, and experiments on real data including noisy variants. We use:
-\begin{itemize}
-    \item Two moons.
-    \item Concentric circles.
-    \item Gaussian blobs.
-    \item An overlapping-blobs stress case.
-    \item Iris data.
-    \item A digits subset consisting of classes $\{0,1,3,6\}$.
-    \item Zachary's karate club graph.
-    \item A noise sweep on the two-moons dataset.
-\end{itemize}
-We report clustering accuracy after optimal label matching, ARI, NMI, and purity.
+\subsection{Metrics}
+For labeled benchmarks we report accuracy after optimal label matching, adjusted Rand index (ARI), normalized mutual information (NMI), and purity. Purity is especially relevant for the digit-subset experiments because the project brief explicitly asks how close clusters are to being label-pure.
 
-\section{Qualitative results}
-Figures~\ref{fig:moons}--\ref{fig:digits} show representative synthetic and real-data outcomes. As expected, spectral clustering clearly outperforms $k$-means on non-convex structures such as two moons and circles, while both methods perform competitively on nearly spherical Gaussian blobs. In the overlapping-blobs example, neither method is perfect, illustrating that spectral clustering is not magic: graph construction and the underlying cluster geometry still matter.
+\subsection{Datasets}
+We used the following groups of experiments.
+\begin{itemize}[leftmargin=1.4em]
+    \item \textbf{Synthetic success cases:} two moons, concentric circles, Gaussian blobs, high-dimensional moons (moons embedded in 20 dimensions), and high-dimensional blobs.
+    \item \textbf{Synthetic failure/stress cases:} overlapping blobs and a bridge-connected two-cluster dataset.
+    \item \textbf{Real/vector datasets:} Iris and four digits experiments: $\{0,1\}$, $\{1,7\}$, $\{0,1,3,6\}$, and all ten classes. This exactly matches the digit-subset structure requested in the brief, except that we use \texttt{sklearn.datasets.load\_digits} rather than MNIST for speed and reproducibility \cite{sklearnDigits}.
+    \item \textbf{Graph datasets:} Zachary's karate club and a stochastic block model benchmark.
+    \item \textbf{Robustness and scaling:} a Gaussian-noise sweep on two moons, and a runtime/memory benchmark as $n$ increases.
+\end{itemize}
+
+For graph datasets, plain feature-space $k$-means is not naturally defined. To keep the comparison explicit, we used a weak but transparent baseline: $k$-means on adjacency rows. This is not a state-of-the-art graph clustering baseline, but it provides a concrete comparator.
+
+\section{Results: synthetic data}
+Table~\ref{tab:synthetic} summarizes the main synthetic experiments. The expected pattern is visible. Spectral clustering strongly beats $k$-means on non-convex geometry (two moons, circles), ties or nearly ties on well-separated blobs, and degrades gracefully on stress cases. The high-dimensional moons example is particularly useful: both methods weaken, but spectral clustering still retains a noticeable advantage because the low-dimensional manifold structure survives in local neighborhoods.
+
+\begin{table}[H]
+\centering
+\caption{Synthetic experiments. ARI is reported for both methods.}
+\label{tab:synthetic}
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.2cm}ccp{5.1cm}}
+\toprule
+Dataset & Spectral ARI & $k$-means ARI & Comment \\
+\midrule
+Two moons & 1.000 & 0.245 & Canonical non-convex success case. \\
+Circles & 1.000 & -0.002 & Spectral cleanly separates rings. \\
+Blobs & 0.990 & 0.995 & Both methods work on convex, separated clusters. \\
+High-dim moons & 0.404 & 0.259 & Spectral remains better after adding noisy coordinates. \\
+High-dim blobs & 1.000 & 1.000 & Both methods remain strong. \\
+Overlapping blobs & 0.302 & 0.254 & Ambiguous partition; both methods degrade. \\
+Bridge failure & 0.552 & 0.532 & Thin bridge weakens the graph cut separation. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectral clustering does exactly what we expect on two moons and concentric circles. The bridge example is a more honest failure mode: once two clusters are connected by a thin path, graph connectivity can work against the desired partition.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.47\textwidth]{final_pic/two_moons_spectral.png}
     \includegraphics[width=0.47\textwidth]{final_pic/two_moons_kmeans.png}
-    \caption{Two moons. Left: spectral clustering. Right: $k$-means. Spectral clustering respects the non-convex geometry much better.}
+    \caption{Two moons. Spectral clustering respects the non-convex geometry, while $k$-means imposes a centroid-based split.}
     \label{fig:moons}
 \end{figure}
 
@@ -82,58 +135,120 @@ Figures~\ref{fig:moons}--\ref{fig:digits} show representative synthetic and real
     \centering
     \includegraphics[width=0.47\textwidth]{final_pic/circles_spectral.png}
     \includegraphics[width=0.47\textwidth]{final_pic/circles_kmeans.png}
-    \caption{Concentric circles. Spectral clustering separates the rings, while $k$-means prefers a radial split.}
+    \caption{Concentric circles. Spectral clustering separates the rings; $k$-means prefers a radial partition.}
     \label{fig:circles}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.47\textwidth]{final_pic/blobs_spectral.png}
-    \includegraphics[width=0.47\textwidth]{final_pic/blobs_kmeans.png}
-    \caption{Gaussian blobs. Both methods perform well when clusters are close to convex and well-separated.}
-    \label{fig:blobs}
+    \includegraphics[width=0.47\textwidth]{final_pic/high_dim_moons_spectral.png}
+    \includegraphics[width=0.47\textwidth]{final_pic/high_dim_moons_kmeans.png}
+    \caption{Moons embedded in higher dimension using additional noise coordinates. Spectral clustering still has a measurable advantage.}
+    \label{fig:highdim}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.47\textwidth]{final_pic/overlapping_blobs_failure_spectral.png}
-    \includegraphics[width=0.47\textwidth]{final_pic/overlapping_blobs_failure_kmeans.png}
-    \caption{Overlapping blobs stress case. Performance degrades for both methods, illustrating a regime where no graph construction can fully recover an ambiguous partition.}
-    \label{fig:failure}
+    \includegraphics[width=0.47\textwidth]{final_pic/bridge_failure_spectral.png}
+    \caption{Two stress cases for spectral clustering: overlapping blobs (left) and a bridge-connected dataset (right).}
+    \label{fig:failure2}
 \end{figure}
+
+\section{Results: real data and digit subsets}
+The project brief explicitly asks for the digit-subset progression $\{0,1\}$, $\{1,7\}$, $\{0,1,3,6\}$, and all digits. Table~\ref{tab:digits} reports those results. Spectral clustering performs very well on $\{0,1\}$, substantially beats $k$-means on $\{0,1,3,6\}$ and on all digits, but does poorly on $\{1,7\}$ for the specific graph-construction choice used here. That is a useful lesson rather than a bug: spectral clustering is sensitive to the neighborhood graph, and a case where vanilla $k$-means already aligns extremely well with the class geometry can favor $k$-means.
+
+\begin{table}[H]
+\centering
+\caption{Digit-subset experiments. Purity is included because the project brief asks how pure the recovered clusters are.}
+\label{tab:digits}
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.4cm}cccc}
+\toprule
+Subset & Method & Accuracy & ARI & Purity \\
+\midrule
+$\{0,1\}$ & Spectral & 0.997 & 0.989 & 0.997 \\
+$\{0,1\}$ & $k$-means & 0.994 & 0.978 & 0.994 \\
+\addlinespace
+$\{1,7\}$ & Spectral & 0.571 & 0.019 & 0.571 \\
+$\{1,7\}$ & $k$-means & 1.000 & 1.000 & 1.000 \\
+\addlinespace
+$\{0,1,3,6\}$ & Spectral & 0.994 & 0.985 & 0.994 \\
+$\{0,1,3,6\}$ & $k$-means & 0.935 & 0.838 & 0.935 \\
+\addlinespace
+All digits & Spectral & 0.757 & 0.670 & 0.774 \\
+All digits & $k$-means & 0.589 & 0.468 & 0.623 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:digits} shows the $\{0,1,3,6\}$ subset after PCA to two dimensions for visualization only; the actual clustering was run in the full standardized feature space. Figure~\ref{fig:digitsbar} summarizes purity across the four required digit experiments.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.47\textwidth]{final_pic/digits_2d_spectral.png}
     \includegraphics[width=0.47\textwidth]{final_pic/digits_2d_kmeans.png}
-    \caption{Digits subset projected to 2D by PCA for visualization only. The actual clustering experiment is run in the original standardized feature space.}
+    \caption{Digits subset $\{0,1,3,6\}$ visualized in 2D by PCA. Spectral clustering gives a cleaner partition on this harder multi-class subset.}
     \label{fig:digits}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.6\textwidth]{final_pic/karate_spectral.png}
-    \caption{Spectral clustering on Zachary's karate club graph.}
-    \label{fig:karate}
+    \includegraphics[width=0.65\textwidth]{final_pic/digits_purity_bar.png}
+    \caption{Purity on the four required digit experiments.}
+    \label{fig:digitsbar}
 \end{figure}
 
-\section{Noise robustness}
-Figure~\ref{fig:noise} shows the ARI on the two-moons dataset as isotropic Gaussian noise is increased. Spectral clustering remains clearly better than $k$-means over a useful range of noise levels, although performance eventually degrades as the local neighborhood graph becomes less faithful to the underlying manifold structure.
+On Iris, spectral clustering also improves over $k$-means: ARI rises from $0.620$ to $0.707$. This is a more modest gain than on clearly non-convex synthetic data, which matches expectations.
+
+\section{Results: graph data}
+Spectral clustering is especially natural on graph data. On Zachary's karate club graph, spectral clustering reaches accuracy $0.971$ and ARI $0.882$, far above the adjacency-row $k$-means baseline (accuracy $0.676$, ARI $0.109$). On a planted stochastic block model, spectral clustering perfectly recovers the communities, while adjacency-row $k$-means is also strong but slightly worse. These two experiments strengthen the ``community detection'' side of the project brief.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.6\textwidth]{final_pic/noise_moons_ari.png}
-    \caption{ARI versus additive Gaussian noise on the two-moons dataset.}
+    \includegraphics[width=0.47\textwidth]{final_pic/karate_spectral.png}
+    \includegraphics[width=0.47\textwidth]{final_pic/sbm_spectral.png}
+    \caption{Graph experiments: Zachary's karate club (left) and a stochastic block model benchmark (right).}
+    \label{fig:graphs}
+\end{figure}
+
+\section{Noise robustness and computational scaling}
+Figure~\ref{fig:noise} shows ARI under additive Gaussian noise on two moons. Spectral clustering remains perfect for small noise and clearly stronger than $k$-means over a useful range, but it eventually degrades once the local graph no longer reflects the underlying manifold. This is exactly the sort of robustness experiment the brief asks for.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.58\textwidth]{final_pic/noise_moons_ari.png}
+    \caption{ARI versus additive Gaussian noise on two moons.}
     \label{fig:noise}
 \end{figure}
 
+Figure~\ref{fig:scaling} reports runtime and approximate memory scaling. The plot makes the main computational lesson visually obvious: once the graph is built, the eigensolver is the expensive stage, while the final $k$-means step in spectral space is relatively small.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.47\textwidth]{final_pic/scaling_runtime.png}
+    \includegraphics[width=0.47\textwidth]{final_pic/scaling_memory.png}
+    \caption{Runtime and approximate memory scaling for the spectral pipeline on a two-moons benchmark.}
+    \label{fig:scaling}
+\end{figure}
+
 \section{Discussion}
-The experiments align with standard intuition. Spectral clustering is strongest when the data are best viewed through neighborhood relations rather than global Euclidean centroids. It is especially natural for graph data and for feature data with curved or disconnected geometry. Its weaknesses are also visible: graph construction is a modeling choice, the number of neighbors matters, and the eigensolve can become the computational bottleneck on large problems.
+Overall, the experiments match the standard theory quite well.
+\begin{itemize}[leftmargin=1.4em]
+    \item On non-convex synthetic datasets, spectral clustering substantially outperforms $k$-means.
+    \item On standard blob-like data, both methods are strong and $k$-means can even be slightly better.
+    \item On graph/community datasets, spectral clustering is especially natural and strong.
+    \item On the required digit subsets, spectral clustering is not uniformly better; it helps strongly on the harder multi-class subsets but not on the easy $\{1,7\}$ pair. This is a useful reminder that graph construction is a modeling choice, not a free lunch.
+\end{itemize}
 
-The project brief also asks whether the empirical outcomes match expectations. The answer is mostly yes. Two moons and circles are canonical success cases, Gaussian blobs are a regime where $k$-means is already strong, and overlapping blobs give a partial failure case. On the real datasets, the method remains competitive and often stronger than $k$-means, but gains are more modest because class structure is not purely graph-separable.
+The project brief also asks whether the results match expectations. The answer is mostly yes. The main surprise is the $\{1,7\}$ subset, where $k$-means already aligns almost perfectly with the raw feature geometry and our particular neighborhood graph is comparatively poor. This is an informative negative result and belongs in the report.
 
-\section{How to reproduce}
-All code is in the `code/` directory. Running `python run_all.py` from that directory regenerates all figures into `final_pic/` and all tables into `results/`. The code is organized into reusable modules for data loading, graph construction, spectral clustering, metrics, plotting, and experiment orchestration.
+\section{Reproducibility}
+The code is organized as a small Python workspace. Running
+\begin{verbatim}
+cd code
+python run_all.py
+\end{verbatim}
+regenerates all figures in \texttt{final\_pic/} and all tables/CSVs in \texttt{results/}. The workspace is structured so it can be extended easily with additional datasets or parameter sweeps.
 
 \bibliographystyle{plain}
 \bibliography{refs}

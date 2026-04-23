@@ -1,9 +1,15 @@
-dataset,method,accuracy,ari,nmi,purity
-two_moons,spectral,1.0,1.0,1.0,1.0
-two_moons,kmeans,0.76,0.2685684881617102,0.20526732647716556,0.76
-circles,spectral,1.0,1.0,1.0,1.0
-circles,kmeans,0.5125,-0.0018829087774792652,0.0004516420679525679,0.5125
-blobs,spectral,0.6311111111111111,0.44271926208024776,0.49452962051672883,0.6422222222222222
-blobs,kmeans,0.9066666666666666,0.7381408349602584,0.6712440833929904,0.9066666666666666
-overlapping_blobs_failure,spectral,0.5844444444444444,0.24710378821391674,0.22538756420586986,0.5888888888888889
-overlapping_blobs_failure,kmeans,0.5377777777777778,0.20505381302886908,0.19728987784990368,0.5822222222222222
+dataset,family,expectation,method,accuracy,ari,nmi,purity,graph_seconds,eigensolver_seconds,kmeans_seconds,total_seconds,mem_X,mem_affinity_sparse,mem_nnz_affinity,mem_embedding
+two_moons,success,"Low-dimensional, non-convex manifolds; spectral should clearly beat k-means.",spectral,1.0,1.0,1.0,1.0,0.004324379000081535,0.10570429099971079,0.029406552000182273,0.1394352219999746,8000.0,88812.0,7234.0,8000.0
+two_moons,success,"Low-dimensional, non-convex manifolds; spectral should clearly beat k-means.",kmeans,0.748,0.24450207299571752,0.1855866610200871,0.748,,,0.015057871999943018,,,,,
+circles,success,Concentric rings violate the convex-cluster assumption of k-means.,spectral,1.0,1.0,1.0,1.0,0.0029590379999717698,0.05221446999985346,0.00896311299993613,0.06413662099976136,8000.0,96492.0,7874.0,8000.0
+circles,success,Concentric rings violate the convex-cluster assumption of k-means.,kmeans,0.5,-0.002008032128514056,1.2813706015259669e-15,0.5,,,0.018517862999942736,,,,,
+blobs,success,Well-separated convex clusters; both methods should do well.,spectral,0.9966666666666667,0.9900168347249766,0.9829929733076637,0.9966666666666667,0.003145245999803592,0.02732343299976492,0.010876016000111122,0.04134469499967963,9600.0,109540.0,8928.0,14400.0
+blobs,success,Well-separated convex clusters; both methods should do well.,kmeans,0.9983333333333333,0.9949958125176231,0.990445010867515,0.9983333333333333,,,0.013072662000013224,,,,,
+high_dim_moons,success,Two moons embedded in 20D with noise coordinates; spectral should still exploit neighborhood geometry.,spectral,0.8183333333333334,0.40435013676790726,0.31635104418174465,0.8183333333333334,0.005928261000008206,0.005187354000099731,0.013416545999916707,0.024532161000024644,96000.0,173764.0,14280.0,9600.0
+high_dim_moons,success,Two moons embedded in 20D with noise coordinates; spectral should still exploit neighborhood geometry.,kmeans,0.755,0.25886272280076694,0.19674690627156094,0.755,,,0.020090437999897404,,,,,
+high_dim_blobs,success,High-dimensional but well-separated blobs; both methods should remain strong.,spectral,1.0,1.0,1.0,1.0,0.010198151999702532,0.00963576499998453,0.013758088000031421,0.03359200499971848,320000.0,269556.0,22196.0,25600.0
+high_dim_blobs,success,High-dimensional but well-separated blobs; both methods should remain strong.,kmeans,1.0,1.0,1.0,1.0,,,0.019039721000353893,,,,,
+overlapping_blobs_failure,failure,Heavy overlap makes any graph partition ambiguous; both methods should degrade.,spectral,0.65,0.3021083882172213,0.2949450491309012,0.65,0.0030734580000171263,0.020293237999794655,0.01727953699992213,0.04064623299973391,9600.0,105316.0,8576.0,14400.0
+overlapping_blobs_failure,failure,Heavy overlap makes any graph partition ambiguous; both methods should degrade.,kmeans,0.57,0.2537533996147862,0.24768295252326503,0.6066666666666667,,,0.021209199999702832,,,,,
+bridge_failure,failure,"A thin bridge creates a near-connection between clusters, so normalized cuts can merge them.",spectral,0.8716666666666667,0.5518463605662874,0.5537899609558614,0.8716666666666667,0.003276578999702906,0.028424773000097048,0.011492496999835566,0.04319384899963552,9600.0,124828.0,10202.0,9600.0
+bridge_failure,failure,"A thin bridge creates a near-connection between clusters, so normalized cuts can merge them.",kmeans,0.865,0.532174165600094,0.5406280294229847,0.865,,,0.01264441099965552,,,,,

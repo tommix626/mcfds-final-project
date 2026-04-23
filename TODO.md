@@ -1,101 +1,85 @@
-# TODO: Gap analysis against `FinalProjects.pdf` (Spectral Clustering track)
+# TODO / Status Audit Against `FinalProjects.pdf` (Spectral Clustering track)
 
-This document compares the current bundle against the exact Spectral Clustering project brief and lists what is still missing or only partially covered.
-
-## Executive summary
-
-The current version is **good as a runnable scaffold**, but it is **not yet fully compliant** with the PDF if interpreted literally. It already covers:
-- one clear flavor of spectral clustering (Ng–Jordan–Weiss),
-- a theory section with objective and construction,
-- a runnable Python implementation,
-- several synthetic experiments,
-- comparison to k-means,
-- one graph dataset (karate club),
-- one tabular dataset (iris),
-- one noise experiment.
-
-However, the PDF asks for a few things that are either missing or only weakly satisfied:
-- a more explicit and deeper theory summary tied to the project references,
-- a clearer quantitative discussion of computational and memory cost,
-- synthetic experiments that are more clearly split into **success cases** and **failure cases**, with explicit commentary,
-- the specific MNIST-style sequence of subsets (0/1, 1/7, 0/1/3/6, all digits),
-- a more explicit analysis of cluster purity on those digit subsets,
-- stronger coverage of graph-style benchmarks beyond karate club,
-- stronger evidence that the experiments match expectations.
+This file compares the current bundle against the Spectral Clustering project brief and records what is now finished, what is only partially finished, and what is still left undone.
 
 ---
 
-## Requirement-by-requirement comparison
+## Overall status
+
+The bundle is now **substantially closer to a full project submission** than the earlier scaffold.
+
+### Finished in a strong way
+- One clear spectral clustering flavor is selected and implemented: **Ng--Jordan--Weiss**.
+- The report now explains the **graph Laplacian**, the **normalized cut objective**, and the **eigenvector relaxation**.
+- The algorithm section now states **inputs, outputs, steps, and computational cost**.
+- The codebase is runnable from a single entrypoint: `code/run_all.py`.
+- There are now **5 success-style synthetic experiments**, including **high-dimensional** cases.
+- There are now **2 explicit failure/stress experiments**.
+- The report compares results with **k-means** throughout the vector-data experiments.
+- The exact digit progression requested in the PDF is now present:
+  - `{0,1}`
+  - `{1,7}`
+  - `{0,1,3,6}`
+  - all digits
+- Cluster quality is now reported with **accuracy, ARI, NMI, and purity**.
+- There is now a **noise robustness experiment**.
+- There is now a **runtime/memory scaling experiment**.
+- There is now stronger graph coverage via **karate club** and **stochastic block model**.
+
+### Still only partial
+- The project brief suggests a broad range of graph/community benchmarks. We cover two, but not the full variety.
+- The computational discussion is much stronger than before, but still not a full theoretical complexity study of nearest-neighbor search.
+- The report discusses expectations and whether they were met, but could still be made more exhaustive on a per-dataset basis.
+
+### Still not finished
+- No repeated-seed uncertainty analysis.
+- No systematic parameter sweep over the graph-construction hyperparameters beyond the implemented fixed settings.
+- No additional large benchmark datasets such as football / dolphins / political blogs.
+
+---
+
+## Requirement-by-requirement status
 
 ## 1) Theory part
 
 ### PDF asks
 - Write a summary on spectral clustering.
 - Pick one flavor.
-- Describe its **objective** and how it constructs clusters from initial data.
+- Describe its objective and how it constructs clusters from initial data.
 
-### Current status
-**Mostly covered, but could be stronger.**
-- `main.tex` does pick one flavor: Ng–Jordan–Weiss.
-- It describes graph construction, normalized Laplacian, eigenvectors, row normalization, and k-means.
-- It also mentions the normalized cut viewpoint.
+### Status
+**Finished.**
 
-### What is still missing
-1. The writeup does **not yet explicitly derive or cleanly formalize** the optimization objective / relaxation.
-2. The writeup does **not deeply compare flavors** enough to justify why this flavor was selected.
-3. The writeup does not use the specific suggested references from the PDF very fully.
-
-### How to proceed
-- Add a dedicated subsection:
-  - `Unnormalized cut / ratio cut / normalized cut`
-  - `Relaxation to eigenvectors of the Laplacian`
-  - `Why NJW uses row-normalized eigenvectors + k-means`
-- Add a concise comparison paragraph:
-  - Shi–Malik normalized cuts
-  - Ng–Jordan–Weiss algorithmic variant
-  - Laplacian eigenmaps relation
-- Expand the bibliography and citations around these points.
+### What was added
+- The report now includes:
+  - graph construction and Laplacians,
+  - the normalized cut objective,
+  - the eigenvector relaxation idea,
+  - a short comparison of flavors,
+  - an explanation of why NJW was chosen.
 
 ### Desired result
-A theory section that reads like a real project report rather than a scaffold: mathematically precise, reference-backed, and clearly tied to the chosen algorithm.
+Already achieved at a good project-report level.
 
 ---
 
-## 2) Algorithmic part: clear algorithm summary
+## 2) Algorithmic summary
 
 ### PDF asks
 - Summarize an algorithm of your choice.
-- State clearly the **inputs** and **outputs**.
-- Ideally discuss how expensive it is computationally.
+- State clearly the inputs and outputs.
+- Ideally discuss computational expense.
 
-### Current status
-**Covered at a basic level.**
-- Inputs, outputs, and steps are present in `main.tex`.
-- Complexity is discussed at a high level.
+### Status
+**Finished.**
 
-### What is still missing
-1. Complexity is **not tied to measured experiments**.
-2. Memory usage is only described informally.
-3. There is no ablation showing effect of `n`, `d`, `k`, or graph sparsity on runtime.
-
-### How to proceed
-- Add a benchmark script, e.g. `benchmark_scaling.py`, that varies:
-  - number of points `n`,
-  - ambient dimension `d`,
-  - number of neighbors `m`,
-  - number of requested clusters `k`.
-- Record:
-  - graph construction time,
-  - eigensolver time,
-  - k-means time,
-  - peak memory or approximate sparse/dense memory footprint.
-- Produce plots:
-  - runtime vs `n`,
-  - runtime breakdown by stage,
-  - memory vs `n`.
+### What was added
+- The report now gives a step-by-step algorithm description.
+- Inputs, outputs, and graph-construction choices are explicit.
+- Cost is discussed both asymptotically and experimentally.
 
 ### Desired result
-A section with both asymptotic discussion and concrete measurements. The PDF explicitly asks for computational and memory discussion, at least quantitatively or experimentally.
+Already achieved.
 
 ---
 
@@ -103,351 +87,238 @@ A section with both asymptotic discussion and concrete measurements. The PDF exp
 
 ### PDF asks
 - Implement the algorithm.
-- It should be easy for the instructor or anyone else to run.
+- It should be easy to run.
 
-### Current status
-**Covered.**
-- The codebase is organized and runnable.
-- `README.md` gives setup and execution steps.
-- Python is fine here because the handoff explicitly asked for Python.
+### Status
+**Finished.**
 
-### What is still missing
-Nothing essential here, but two quality upgrades would help:
-1. Add CLI flags for selecting datasets and parameters.
-2. Add deterministic seed handling and repeated-seed evaluation.
-
-### How to proceed
-- Replace `run_all.py` with argparse support.
-- Add `configs/` or a small YAML/JSON config system.
+### What was added
+- The codebase is modular.
+- `run_all.py` regenerates all figures and CSV tables.
+- The root README documents the workflow.
 
 ### Desired result
-A cleaner handoff for Claude Code and easier reproducibility.
+Already achieved.
 
 ---
 
-## 4) Synthetic datasets where the method should work
+## 4) At least 3 synthetic examples where the method should work
 
 ### PDF asks
-- At least **3 synthetic examples**, qualitatively different from each other.
+- At least 3 synthetic examples.
+- Qualitatively different.
 - Some low-dimensional, some high-dimensional.
-- Cases where the algorithm is expected to work well.
 
-### Current status
-**Partially covered.**
-- Current success examples: `two_moons`, `circles`, `blobs`.
-- These are all standard and good.
+### Status
+**Finished, and now stronger than the minimum.**
 
-### What is still missing
-1. They are mostly **low-dimensional toy datasets**.
-2. There is not yet a clearly designated **high-dimensional synthetic success case**.
-3. The writeup does not explicitly mark these as “expected success cases” and explain why beforehand.
-
-### How to proceed
-Add at least one high-dimensional synthetic benchmark, for example:
-- `high_dim_sbm_features`: generate 2–4 clusters in 50D or 100D with anisotropic noise but graph-separable neighborhoods.
-- `high_dim_two_moons_embedding`: embed moons into 50D by appending noise coordinates.
-
-For each success case:
-- state expectation before showing results,
-- report metrics,
-- compare against k-means,
-- explain why spectral should succeed.
+### Current coverage
+- `two_moons`
+- `circles`
+- `blobs`
+- `high_dim_moons`
+- `high_dim_blobs`
 
 ### Desired result
-At least four success examples, with at least one being genuinely high-dimensional.
+Already achieved.
 
 ---
 
-## 5) Synthetic datasets where the method should not work well
+## 5) At least 1 or 2 synthetic examples where the method should not work well
 
 ### PDF asks
-- At least **1 or 2 synthetic examples**, qualitatively different from each other, where you expect the algorithms to not work well.
-- Ask whether the results match expectations, yes/no and why.
+- 1 or 2 failure cases.
+- Explain whether the outcomes match expectations.
 
-### Current status
-**Only partially covered.**
-- There is one weak failure case: `overlapping_blobs_failure`.
+### Status
+**Finished.**
 
-### What is still missing
-1. Only one failure example is present.
-2. It is not qualitatively very different from the success cases.
-3. The report does not explicitly say “this is expected to fail because ...” and then evaluate whether that expectation was met.
+### Current coverage
+- `overlapping_blobs_failure`
+- `bridge_failure`
 
-### How to proceed
-Add at least one more failure regime, ideally very different in character:
-- `varying_density_moons`: same manifold class but highly uneven densities, which can break fixed-kNN choices.
-- `bridged_clusters`: two blobs connected by a thin bridge, producing ambiguity in graph cuts.
-- `xor_checkerboard`: a case where local neighborhoods do not align well with the target partition.
-- `noisy_high_dim_blobs`: high-dimensional noise swamps neighborhood structure.
-
-For each failure case:
-- state expected failure mode,
-- run spectral and k-means,
-- explain exactly what broke.
+### Notes
+The report now explicitly describes why these are stress cases and how the outcomes compare to expectation.
 
 ### Desired result
-Two clearly distinct failure examples, each with interpretation.
+Already achieved.
 
 ---
 
 ## 6) Compare with k-means on all examples
 
 ### PDF asks
-- For all examples, compare with k-means and comment on results.
+- For all examples, compare the results with k-means and comment on them.
 
-### Current status
-**Mostly covered, but not fully.**
-- Synthetic datasets: yes.
-- Iris: yes.
-- Digits subset: yes.
-- Karate graph: no direct k-means baseline, since it is treated as a graph-only case.
+### Status
+**Mostly finished.**
 
-### What is still missing
-1. The narrative comments are brief.
-2. The karate example does not have a natural k-means baseline in the current report.
-3. The comparison is not yet summarized in a single master table in the LaTeX report.
+### Finished part
+- All vector-data experiments have a direct spectral-vs-k-means comparison.
+- The report contains synthetic and digit summary tables.
 
-### How to proceed
-- Add one summary table to `main.tex` listing all datasets and both methods.
-- For graph datasets, either:
-  - explain why plain feature-space k-means is not directly comparable, or
-  - compare against a graph baseline such as modularity or label propagation instead.
-- Expand commentary: one paragraph per dataset family.
+### Partial part
+- For graph datasets, plain k-means is not natural. The current bundle uses `kmeans_on_adjacency` as a transparent baseline.
+- This is a reasonable comparison, but it is weaker than a graph-native baseline.
+
+### What could still be improved
+- Add one more graph-specific comparator, e.g. label propagation or modularity-based clustering.
 
 ### Desired result
-A report where the comparison with k-means is impossible to miss and easy to grade.
+A more defensible graph comparison section.
 
 ---
 
-## 7) Meaningful performance metrics
+## 7) Meaningful performance measurement
 
 ### PDF asks
-- Measure performance using a meaningful notion of performance.
-- For digit subsets, explicitly look at how “pure” the clusters are.
+- Measure performance in a meaningful way.
+- For digit subsets, discuss purity.
 
-### Current status
-**Mostly covered, but digits purity coverage is incomplete.**
-- ARI, NMI, purity, and accuracy are already computed.
-- That is good.
+### Status
+**Finished.**
 
-### What is still missing
-1. Purity is computed, but the report does not foreground it enough for the digit tasks.
-2. There is no confusion-matrix or cluster-composition table for digits.
-3. There is no per-cluster purity discussion.
-
-### How to proceed
-- Add cluster composition tables for each digits subset.
-- Add per-cluster purity plots or a stacked bar chart.
-- In `main.tex`, explicitly connect the metrics to the PDF wording about “pure” clusters.
+### What was added
+- Accuracy after best permutation matching
+- ARI
+- NMI
+- Purity
+- Dedicated digits-purity summary figure
 
 ### Desired result
-A grader can immediately see that the project answered the “how pure are the clusters?” part directly.
+Already achieved.
 
 ---
 
-## 8) MNIST-style digits experiments
+## 8) Specific digit subset sequence
 
 ### PDF asks
-Perform spectral clustering on the following subsets of MNIST digits data:
-- all 1s and 0s,
-- all 1s and 7s,
-- all 1s, 3s, 6s, 0s,
-- all digits,
-and use `K` equal to the number of classes in each subset.
-If the data are too large, extract a subset and **indicate clearly when and how**.
+- Use the subsets:
+  - all 1s and 0s
+  - all 1s and 7s
+  - all 1s, 3s, 6s, 0s
+  - all digits
+- Choose `K` accordingly.
+- Measure how pure the clusters are.
 
-### Current status
-**Not fully covered.**
-- Current code only runs **one** digits experiment: classes `{0,1,3,6}`.
-- It uses a PCA-2D version for reliability and speed.
+### Status
+**Finished.**
 
-### What is still missing
-1. Missing the `0 vs 1` subset.
-2. Missing the `1 vs 7` subset.
-3. Missing the `all digits` subset.
-4. The report does not clearly explain the subsampling rule in a way that mirrors the PDF request.
-5. The current digits run uses PCA-2D for the actual experiment, while the report says clustering is done in original standardized feature space; this should be checked carefully and made consistent.
-
-### How to proceed
-Implement a dedicated digits pipeline:
-- `run_digits_subset(classes=[0,1], n_per_class=...)`
-- `run_digits_subset(classes=[1,7], n_per_class=...)`
-- `run_digits_subset(classes=[0,1,3,6], n_per_class=...)`
-- `run_digits_subset(classes=list(range(10)), n_per_class=...)`
-
-Also:
-- decide whether to use sklearn digits or MNIST;
-- if using sklearn digits as a substitute, say so explicitly;
-- if using MNIST, add a download script and cache.
-
-For each subset:
-- set `K` correctly,
-- report ARI/NMI/purity,
-- compare to k-means,
-- show a compact purity/confusion summary.
+### What was added
+- All four required subsets are now implemented and run.
+- Purity is reported explicitly in the table and figure.
 
 ### Desired result
-A direct one-to-one match to the PDF’s named digit experiments.
+Already achieved.
 
 ---
 
-## 9) Add noise and discuss how results change
+## 9) Add noise and discuss the effect
 
 ### PDF asks
-- Add Gaussian noise with different standard deviations.
-- Discuss how results change.
+- Add Gaussian noise and discuss how results change.
 
-### Current status
-**Covered, but lightly.**
-- The current bundle does a noise sweep on two moons.
+### Status
+**Finished.**
 
-### What is still missing
-1. Only one dataset is tested under noise.
-2. The discussion is short.
-3. No repeated-seed confidence intervals are shown.
-
-### How to proceed
-- Extend the noise sweep to:
-  - moons,
-  - circles,
-  - one digits subset.
-- For each noise level, run multiple seeds.
-- Plot mean ± std for ARI or purity.
+### What was added
+- Two-moons noise sweep with ARI curves for spectral clustering and k-means.
+- Report discussion now interprets the degradation.
 
 ### Desired result
-A stronger noise robustness section rather than a single illustrative figure.
+Already achieved.
 
 ---
 
-## 10) Use of graph datasets / community detection
-
-### PDF framing
-The project is about spectral clustering for both:
-- community detection in graphs,
-- clustering high-dimensional data.
-
-### Current status
-**Partially covered.**
-- High-dimensional / feature data: yes.
-- Graph community detection: only karate club.
-
-### What is still missing
-1. Only one small graph benchmark is included.
-2. No stochastic block model experiment, even though the PDF explicitly suggests it.
-3. No degree-heterogeneous graph benchmark like LFR.
-
-### How to proceed
-Add:
-- `run_sbm_graphs()` for planted communities with tunable separation,
-- `run_lfr_graphs()` for harder degree-heterogeneous community detection,
-- optionally dolphins or football if lightweight data loading is easy.
-
-For each graph benchmark:
-- show graph visualization,
-- report ARI/NMI vs ground truth,
-- discuss where spectral works or fails.
-
-### Desired result
-Balanced coverage of both graph clustering and feature clustering.
-
----
-
-## 11) Commentary on whether results matched expectations
+## 10) Quantitative computational / memory discussion
 
 ### PDF asks
-- “Do the results of running the algorithm match your expectations? Yes/no and why?”
+- Discuss how computationally and memory intensive the algorithm is.
+- At least experimentally / quantitatively.
 
-### Current status
-**Partially covered.**
-- The report says the results mostly align with standard intuition.
+### Status
+**Finished at a practical level, partial at a deeper theoretical level.**
 
-### What is still missing
-1. The yes/no expectation check is not done **dataset by dataset**.
-2. Failure cases are not analyzed deeply enough.
+### Finished part
+- Runtime is now broken into graph construction, eigensolver, and final k-means.
+- Approximate memory usage is recorded.
+- Scaling plots are generated.
 
-### How to proceed
-For each dataset in the final report, add a short block:
-- **Expectation:** ...
-- **Observed:** ...
-- **Match?** Yes/No
-- **Reason:** ...
+### Still left undone
+- No separate nearest-neighbor scaling study.
+- No alternative sparse eigensolver comparison.
+
+### Why left undone
+These would significantly expand the scope and are not necessary for a solid project submission.
+
+### Desired next result
+A parameter sweep over `n_neighbors`, graph sparsity, and perhaps alternative eigensolver settings.
+
+---
+
+## 11) Breadth of real/graph datasets
+
+### PDF asks or suggests
+- Real datasets and graph examples such as karate, SBM, dolphins, football, etc.
+
+### Status
+**Partially finished.**
+
+### Finished part
+- Iris
+- Digits subsets
+- Karate club
+- Stochastic block model
+
+### Still left undone
+- No dolphins / football / political blogs / LFR benchmark.
+
+### Why left undone
+The bundle was optimized to stay runnable offline and concise while still covering both vector and graph settings.
+
+### Desired next result
+Add one moderate-size real graph benchmark such as football or dolphins.
+
+---
+
+## 12) Repeated-seed stability / parameter sensitivity
+
+### Status
+**Not finished.**
+
+### What is missing
+- Re-running experiments across multiple random seeds.
+- Error bars or mean/std tables.
+- A sweep over `n_neighbors`.
+
+### Sketch of how to proceed
+1. Wrap each experiment in a loop over seeds, e.g. `seed in {0,1,2,3,4}`.
+2. Aggregate ARI / purity / accuracy into mean and standard deviation.
+3. For each dataset, sweep `n_neighbors` over a small grid and record the best / median result.
+4. Add one figure for sensitivity to `n_neighbors` on two representative datasets.
 
 ### Desired result
-A report that visibly answers the project prompt rather than assuming the reader will infer it.
+A stronger report that distinguishes algorithm behavior from luck in initialization or graph choice.
 
 ---
 
-## 12) Real-data breadth
+## 13) Optional polish still worth doing
 
-### PDF suggests
-Examples include iris and MNIST-style tasks, alongside graph datasets.
+### Status
+**Not necessary, but high-value if time remains.**
 
-### Current status
-**Acceptable but still thin.**
-- Iris: yes.
-- Digits subset: yes.
-- Karate: yes.
-
-### What is still missing
-A stronger sense of breadth. One more real benchmark would help.
-
-### How to proceed
-Choose one lightweight addition:
-- full sklearn digits subsets as above,
-- dolphins / football network,
-- a small text or image embedding dataset if already available.
-
-### Desired result
-A project that feels complete rather than minimal.
-
----
-
-## Priority order
-
-## Highest priority
-1. **Finish the exact digits sequence from the PDF**: `0/1`, `1/7`, `0/1/3/6`, `all digits`.
-2. **Add at least one more failure case** and analyze it explicitly.
-3. **Add quantitative runtime/memory experiments**.
-4. **Strengthen the theory section** with objective/relaxation details.
-
-## Medium priority
-5. Add SBM and/or LFR graph experiments.
-6. Add repeated-seed robustness for noise and metrics.
-7. Add master result tables and per-dataset expectation/observation blocks.
-
-## Nice-to-have
-8. Add ablations over graph construction choices.
-9. Add sparse eigensolver benchmarking.
-10. Add appendix derivations and more visualizations.
-
----
-
-## Concrete code tasks
-
-### Code tasks to add
-- `code/spectral_project/benchmarks.py`
-- `code/spectral_project/digits_suite.py`
-- `code/spectral_project/graph_benchmarks.py`
-- `code/spectral_project/ablations.py`
-
-### Figures/tables to add
-- `final_pic/runtime_vs_n.png`
-- `final_pic/runtime_breakdown.png`
-- `final_pic/memory_vs_n.png`
-- `final_pic/digits_01_*.png`
-- `final_pic/digits_17_*.png`
-- `final_pic/digits_all_*.png`
-- `final_pic/failure_case_2_*.png`
-- `final_pic/sbm_graph_*.png`
-- `results/digits_suite_metrics.csv`
-- `results/runtime_metrics.csv`
-- `results/graph_metrics.csv`
-- `results/cluster_purity_tables.csv`
+### Possible additions
+- Add a graph-native comparator for karate/SBM.
+- Add one more real graph dataset.
+- Add confidence intervals over seeds.
+- Add a small appendix table with all exact runtime and memory numbers.
+- Add parameter-sensitivity figures for `n_neighbors`.
 
 ---
 
 ## Bottom line
 
-The current bundle is a **strong starter package**, but it is still closer to a **well-built scaffold** than a fully complete final submission under a strict reading of the PDF. The biggest gap is that the current project does **not yet fully execute the exact digit experiments requested in the PDF**, and it does **not yet quantitatively discuss computational/memory cost** in the experimental sense.
-
-If the goal is “good enough to hand to Claude Code for completion,” this bundle is in solid shape. If the goal is “touch every point in the project brief,” the items above should still be completed.
+If graded against the PDF in spirit, the project is now **close to submission quality** and clearly stronger than the original scaffold. The biggest remaining upgrades are:
+1. repeated-seed robustness,
+2. parameter sensitivity,
+3. one more graph benchmark or graph baseline.

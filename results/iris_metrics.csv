@@ -1,3 +1,3 @@
-dataset,method,accuracy,ari,nmi,purity
-iris,spectral,0.88,0.7073626391173137,0.7771535104605841,0.88
-iris,kmeans,0.8333333333333334,0.6201351808870379,0.659486892724918,0.8333333333333334
+dataset,family,expectation,method,accuracy,ari,nmi,purity,graph_seconds,eigensolver_seconds,kmeans_seconds,total_seconds
+iris,real,Spectral should be competitive; gains may be modest on nearly convex classes.,spectral,0.88,0.7073626391173137,0.7771535104605841,0.88,0.0019225229998482973,0.00475113800030158,0.012593254999956116,0.019266916000105994
+iris,real,Spectral should be competitive; gains may be modest on nearly convex classes.,kmeans,0.8333333333333334,0.6201351808870379,0.659486892724918,0.8333333333333334,,,0.013680455000212532,

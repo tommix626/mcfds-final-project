@@ -231,6 +231,61 @@ Figure~\ref{fig:scaling} reports runtime and approximate memory scaling. The plo
     \label{fig:scaling}
 \end{figure}
 
+
+\section{Research-style add-ons: sensitivity, eigengaps, graph design, failure modes, and bottlenecks}
+The previous sections satisfy the main project requirements: theory, an implemented algorithm, synthetic and real data, comparison to $k$-means, graph examples, noise, and computational scaling.  To make the report less like a catalogue of examples and more like a careful empirical study, we added five targeted experiments.  These experiments are deliberately separated from the core results so that they can be kept, shortened, or moved to an appendix without disrupting the required project structure.
+
+\subsection{Parameter sensitivity map}
+Spectral clustering depends strongly on the graph it constructs.  Figure~\ref{fig:paramsensitivity} shows a phase-diagram style sweep on two moons, varying both the feature noise and the number of nearest neighbors in the graph.  The main pattern is useful: there is a broad stable band at moderate neighbor counts, but too few neighbors can fragment the graph, while too many neighbors can wash out the two-moon geometry once noise is substantial.  This is a more informative robustness test than a single noise curve because it shows that ``spectral clustering'' is really a family of graph choices, not a parameter-free method.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.72\textwidth]{final_pic/parameter_sensitivity_heatmap.png}
+    \caption{Parameter sensitivity map on two moons.  Each cell is ARI for normalized spectral clustering as we vary the feature noise and the $k$-NN graph degree.}
+    \label{fig:paramsensitivity}
+\end{figure}
+
+\subsection{Eigengap study}
+A common heuristic for spectral clustering is that the first few eigenvalues of the graph Laplacian reveal the number and strength of clusters.  Figure~\ref{fig:eigengap} compares the smallest eigenvalues on several datasets.  The stochastic block model has a clear gap after the third eigenvalue and is perfectly recovered, which matches the textbook story.  The two-moons case also has useful low-eigenvalue structure.  But the overlapping blobs and digit cases are less clean: a visible gap alone is not a complete certificate of good clustering.  This experiment makes the eigengap heuristic concrete while also showing its limitation.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{final_pic/eigengap_study.png}
+    \caption{Smallest eigenvalues of the symmetric normalized graph Laplacian.  A clean eigengap often correlates with clusterability, but it is not by itself a guarantee of high clustering accuracy.}
+    \label{fig:eigengap}
+\end{figure}
+
+\subsection{Graph construction ablation}
+The strongest additional lesson is that graph construction is the main inductive bias.  Figure~\ref{fig:graphablation} compares a symmetrized $k$-NN RBF graph, a mutual-$k$-NN RBF graph, and a dense RBF graph.  On moons and circles, local sparse graphs preserve manifold geometry and dense RBF does poorly.  On the digit subset $\{0,1,3,6\}$, dense RBF performs well, while mutual-$k$-NN becomes too restrictive and loses useful edges.  The conclusion is not that one graph is universally best; rather, graph construction must match the data geometry.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{final_pic/graph_construction_ablation.png}
+    \caption{Graph construction ablation.  The same spectral clustering pipeline can behave very differently depending on whether the graph is sparse local, mutual local, or dense.}
+    \label{fig:graphablation}
+\end{figure}
+
+\subsection{Failure mode taxonomy}
+Figure~\ref{fig:failuretaxonomy} collects three interpretable failure or stress modes.  First, too few neighbors can fragment a manifold graph.  Second, a bridge of intermediate points can remove the clean cut between two clusters.  Third, varying density and imbalance can make a single global neighborhood scale inappropriate.  The third example is not a catastrophic failure in this particular run, but it illustrates why fixed graph parameters are fragile: the same $k$-NN rule means different things in dense and diffuse regions.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{final_pic/failure_taxonomy.png}
+    \caption{Three failure archetypes for graph-based clustering: graph fragmentation, bridge connections, and varying-density geometry.}
+    \label{fig:failuretaxonomy}
+\end{figure}
+
+\subsection{Runtime bottleneck breakdown}
+Figure~\ref{fig:bottleneck} expands the computational scaling analysis by decomposing spectral clustering runtime into graph construction, eigensolver, and final $k$-means-on-embedding stages.  For the largest sizes tested, the eigensolver dominates the runtime.  This agrees with the theoretical discussion: once a sparse graph has been built, the expensive stage is extracting the relevant eigenvectors of a large sparse Laplacian.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.68\textwidth]{final_pic/runtime_bottleneck_breakdown.png}
+    \caption{Runtime bottleneck breakdown for the spectral clustering pipeline.  The final $k$-means step is small; the eigensolver becomes the dominant cost as $n$ grows.}
+    \label{fig:bottleneck}
+\end{figure}
+
+
 \section{Discussion}
 Overall, the experiments match the standard theory quite well.
 \begin{itemize}[leftmargin=1.4em]

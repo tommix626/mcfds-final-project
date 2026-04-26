@@ -1,5 +1,5 @@
 dataset,family,expectation,method,accuracy,ari,nmi,purity,graph_seconds,eigensolver_seconds,kmeans_seconds,total_seconds
-karate_graph,graph,Spectral should recover the post-split factions more naturally than adjacency-row k-means.,spectral,0.9705882352941176,0.8822575413558222,0.8371694628777809,0.9705882352941176,,0.00039704999971945654,0.009217328999966412,0.009614378999685869
-karate_graph,graph,Spectral should recover the post-split factions more naturally than adjacency-row k-means.,kmeans_on_adjacency,0.6764705882352942,0.10886967659301953,0.24392962778360558,0.6764705882352942,,,0.00904931500008388,
-sbm_graph,graph,"On a planted-community graph, spectral should strongly recover communities.",spectral,1.0,1.0,1.0,1.0,,0.0029865090000384953,0.010945218999950157,0.013931727999988652
-sbm_graph,graph,"On a planted-community graph, spectral should strongly recover communities.",kmeans_on_adjacency,0.9925925925925926,0.977693651500245,0.9675891433900604,0.9925925925925926,,,0.020899525999993784,
+karate_graph,graph,Spectral should recover the post-split factions more naturally than adjacency-row k-means.,spectral,0.9705882352941176,0.8822575413558222,0.8371694628777809,0.9705882352941176,,0.00035988000001907494,0.007141516000046977,0.007501396000066052
+karate_graph,graph,Spectral should recover the post-split factions more naturally than adjacency-row k-means.,kmeans_on_adjacency,0.6764705882352942,0.10886967659301953,0.24392962778360558,0.6764705882352942,,,0.006808586999966337,
+sbm_graph,graph,"On a planted-community graph, spectral should strongly recover communities.",spectral,1.0,1.0,1.0,1.0,,0.0030681969999477587,0.008313906000012139,0.011382102999959898
+sbm_graph,graph,"On a planted-community graph, spectral should strongly recover communities.",kmeans_on_adjacency,0.9925925925925926,0.977693651500245,0.9675891433900604,0.9925925925925926,,,0.01450776099994755,

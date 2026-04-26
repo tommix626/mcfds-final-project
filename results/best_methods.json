@@ -19,15 +19,15 @@
   },
   "digits_01": {
     "best_method": "spectral",
-    "ari": 0.988888814745925,
-    "purity": 0.9972222222222222,
-    "accuracy": 0.9972222222222222
+    "ari": 0.9778395211173349,
+    "purity": 0.9944444444444444,
+    "accuracy": 0.9944444444444444
   },
   "digits_0136": {
-    "best_method": "spectral",
-    "ari": 0.98520686172411,
-    "purity": 0.994475138121547,
-    "accuracy": 0.994475138121547
+    "best_method": "kmeans",
+    "ari": 0.8376612196515375,
+    "purity": 0.9350828729281768,
+    "accuracy": 0.9350828729281768
   },
   "digits_17": {
     "best_method": "kmeans",
@@ -37,9 +37,9 @@
   },
   "digits_all": {
     "best_method": "spectral",
-    "ari": 0.6701308273238591,
-    "purity": 0.773511407902059,
-    "accuracy": 0.7573734001112966
+    "ari": 0.6800511633486981,
+    "purity": 0.7846410684474123,
+    "accuracy": 0.7696160267111853
   },
   "high_dim_blobs": {
     "best_method": "spectral",
@@ -67,7 +67,7 @@
   },
   "overlapping_blobs_failure": {
     "best_method": "spectral",
-    "ari": 0.3021083882172213,
+    "ari": 0.3046314700744287,
     "purity": 0.65,
     "accuracy": 0.65
   },

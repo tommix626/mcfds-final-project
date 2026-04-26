@@ -197,3 +197,64 @@ def spectral_on_graph(W: np.ndarray | csr_matrix, n_clusters: int, random_state:
         timings=timings,
         memory_bytes=memory,
     )
+
+
+def dense_rbf_affinity(X: np.ndarray, gamma: float | None = None) -> np.ndarray:
+    """Fully connected RBF affinity. Intended for moderate n only."""
+    sq = np.sum((X[:, None, :] - X[None, :, :]) ** 2, axis=2)
+    if gamma is None:
+        vals = sq[sq > 1e-12]
+        sigma2 = float(np.median(vals)) if vals.size else 1.0
+        gamma = 1.0 / max(sigma2, 1e-12)
+    W = np.exp(-gamma * sq)
+    np.fill_diagonal(W, 0.0)
+    return W
+
+
+def mutual_knn_rbf_affinity_sparse(
+    X: np.ndarray,
+    n_neighbors: int = 10,
+    gamma: float | None = None,
+) -> csr_matrix:
+    """Build a sparse mutual-kNN RBF graph: keep only edges i<->j that appear in both directed kNN lists."""
+    G = kneighbors_graph(
+        X,
+        n_neighbors=n_neighbors,
+        mode="distance",
+        include_self=False,
+        metric="minkowski",
+        p=2,
+    ).tocsr()
+    if G.nnz == 0:
+        raise ValueError("kNN graph is empty; increase n_neighbors or check the dataset.")
+    if gamma is None:
+        sigma2 = float(np.median(np.square(G.data))) if G.data.size else 1.0
+        gamma = 1.0 / max(sigma2, 1e-12)
+    W = G.copy().astype(float)
+    W.data = np.exp(-gamma * np.square(W.data))
+    M = W.minimum(W.T).tocsr()
+    M.setdiag(0.0)
+    M.eliminate_zeros()
+    return M
+
+
+def spectral_from_affinity(
+    W: np.ndarray | csr_matrix,
+    n_clusters: int,
+    random_state: int = 0,
+    n_init: int = 20,
+) -> SpectralResult:
+    """Run the NJW spectral stage from a precomputed affinity matrix."""
+    return spectral_on_graph(W, n_clusters=n_clusters, random_state=random_state, n_init=n_init)
+
+
+def first_laplacian_eigenvalues(W: np.ndarray | csr_matrix, n_eigs: int = 12) -> np.ndarray:
+    """Return the smallest eigenvalues of the symmetric normalized Laplacian."""
+    if issparse(W):
+        L = normalized_laplacian_sparse(W.tocsr())
+        k = min(n_eigs, W.shape[0] - 2)
+        vals, _ = eigsh(L, k=k, which="SM")
+        return np.sort(vals)
+    L = normalized_laplacian_dense(np.asarray(W))
+    vals = eigh(L, eigvals_only=True)
+    return vals[:n_eigs]

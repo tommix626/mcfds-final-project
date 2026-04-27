@@ -89,6 +89,19 @@ The current code runs:
   - failure mode taxonomy,
   - runtime bottleneck breakdown.
 
+
+## Recent revision: figure-caption consistency
+
+The current version includes a pass that aligns captions and discussion with the actual plots and metric tables. In particular:
+
+- high-dimensional moons are described as a modest quantitative advantage, not a clean visual recovery;
+- the digit PCA figure is described as illustrative only, with the quantitative table carrying the claim;
+- the noise curve is described as single-seed and non-monotone after graph disruption;
+- the bridge example is treated as a stress/partial-degradation case rather than a catastrophic failure;
+- the runtime bottleneck plot now overlays the plain k-means baseline used in the text.
+
+This makes the report more cautious and defensible: visual figures illustrate behavior, while stronger claims are tied to the metric tables.
+
 ## Notes for new contributors
 
 The main entrypoint is `spectral_project/experiments.py`. To add a new experiment:

@@ -451,7 +451,8 @@ def run_bottleneck_breakdown(random_state: int = 0) -> pd.DataFrame:
     """More explicit runtime bottleneck figure derived from the scaling benchmark."""
     df = pd.read_csv(results_dir() / "scaling_metrics.csv")
     sdf = df[df["method"] == "spectral"].copy()
-    stacked_runtime(figures_dir() / "runtime_bottleneck_breakdown.png", sdf, "Spectral pipeline bottleneck breakdown")
+    kdf = df[df["method"] == "kmeans"].copy()
+    stacked_runtime(figures_dir() / "runtime_bottleneck_breakdown.png", sdf, "Spectral pipeline bottleneck breakdown", baseline_df=kdf)
     total = sdf["total_seconds"].replace(0, np.nan)
     pct = sdf[["graph_seconds", "eigensolver_seconds", "post_kmeans_seconds"]].div(total, axis=0) * 100
     pct.insert(0, "n", sdf["n"].values)

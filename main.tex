@@ -81,7 +81,7 @@ There are three main costs.
     \item \textbf{$k$-means in spectral space.} Once the embedding is computed, the final step is cheap because the embedding has only $k$ columns.
 \end{enumerate}
 
-We measured these costs directly. On a two-moons benchmark, increasing $n$ from $150$ to $900$ increased the spectral pipeline runtime from $0.015$ s to $0.353$ s, while the $k$-means-only baseline remained around $0.013$--$0.016$ s. The eigensolver dominated the growth, while graph memory rose from about $24$ KiB to $161$ KiB for the sparse affinity matrix. Figure~\ref{fig:scaling} shows these trends.
+We measured these costs directly. On a two-moons benchmark, increasing $n$ from $150$ to $900$ increased the spectral pipeline runtime from about $0.012$ s to $0.220$ s, while the $k$-means-only baseline remained around $0.009$--$0.012$ s. The eigensolver dominated the growth, while graph memory rose from about $24$ KiB to $161$ KiB for the sparse affinity matrix. Figure~\ref{fig:scaling} shows these trends. Exact timings vary by machine, so we interpret the trend rather than the individual seconds.
 
 \section{Experimental design}
 \subsection{Metrics}
@@ -100,7 +100,7 @@ We used the following groups of experiments.
 For graph datasets, plain feature-space $k$-means is not naturally defined. To keep the comparison explicit, we used a weak but transparent baseline: $k$-means on adjacency rows. This is not a state-of-the-art graph clustering baseline, but it provides a concrete comparator.
 
 \section{Results: synthetic data}
-Table~\ref{tab:synthetic} summarizes the main synthetic experiments. The expected pattern is visible. Spectral clustering strongly beats $k$-means on non-convex geometry (two moons, circles), ties or nearly ties on well-separated blobs, and degrades gracefully on stress cases. The high-dimensional moons example is particularly useful: both methods weaken, but spectral clustering still retains a noticeable advantage because the low-dimensional manifold structure survives in local neighborhoods.
+Table~\ref{tab:synthetic} summarizes the main synthetic experiments. The expected pattern is visible on the clean low-dimensional examples: spectral clustering strongly beats $k$-means on non-convex geometry (two moons, circles), and ties or nearly ties on well-separated blobs. The stress cases are more nuanced. On high-dimensional moons, spectral clustering has a modest quantitative advantage, but the 2D projection in Figure~\ref{fig:highdim} makes clear that neither method cleanly recovers the original moon structure after many noisy coordinates are added. On the bridge-connected dataset, the method is better described as partially degraded rather than catastrophically failed: it separates the two main masses reasonably, but the thin bridge lowers the ARI and weakens the graph-cut interpretation.
 
 \begin{table}[H]
 \centering
@@ -113,15 +113,15 @@ Dataset & Spectral ARI & $k$-means ARI & Comment \\
 Two moons & 1.000 & 0.245 & Canonical non-convex success case. \\
 Circles & 1.000 & -0.002 & Spectral cleanly separates rings. \\
 Blobs & 0.990 & 0.995 & Both methods work on convex, separated clusters. \\
-High-dim moons & 0.404 & 0.259 & Spectral remains better after adding noisy coordinates. \\
+High-dim moons & 0.404 & 0.259 & Both methods degrade; spectral keeps a modest numerical edge. \\
 High-dim blobs & 1.000 & 1.000 & Both methods remain strong. \\
 Overlapping blobs & 0.302 & 0.254 & Ambiguous partition; both methods degrade. \\
-Bridge failure & 0.552 & 0.532 & Thin bridge weakens the graph cut separation. \\
+Bridge stress & 0.552 & 0.532 & Thin bridge partially weakens the intended cut. \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectral clustering does exactly what we expect on two moons and concentric circles. The bridge example is a more honest failure mode: once two clusters are connected by a thin path, graph connectivity can work against the desired partition.
+Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectral clustering does exactly what we expect on two moons and concentric circles. The high-dimensional moons and bridge examples are intentionally less clean: the metrics show only partial advantages, and the plots should be read as stress tests rather than visual proofs of successful recovery.
 
 \begin{figure}[H]
     \centering
@@ -143,7 +143,7 @@ Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectr
     \centering
     \includegraphics[width=0.47\textwidth]{final_pic/high_dim_moons_spectral.png}
     \includegraphics[width=0.47\textwidth]{final_pic/high_dim_moons_kmeans.png}
-    \caption{Moons embedded in higher dimension using additional noise coordinates. Spectral clustering still has a measurable advantage.}
+    \caption{Moons embedded in higher dimension using additional noise coordinates. Both methods degrade; spectral clustering retains a modest quantitative advantage but no longer cleanly recovers the moon structure in this projection.}
     \label{fig:highdim}
 \end{figure}
 
@@ -151,12 +151,12 @@ Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectr
     \centering
     \includegraphics[width=0.47\textwidth]{final_pic/overlapping_blobs_failure_spectral.png}
     \includegraphics[width=0.47\textwidth]{final_pic/bridge_failure_spectral.png}
-    \caption{Two stress cases for spectral clustering: overlapping blobs (left) and a bridge-connected dataset (right).}
+    \caption{Two stress cases for spectral clustering: overlapping blobs (left) and a bridge-connected dataset (right). In the bridge example, spectral clustering still separates the main masses, but the thin connection weakens the intended cut and reduces ARI.}
     \label{fig:failure2}
 \end{figure}
 
 \section{Results: real data and digit subsets}
-The project brief explicitly asks for the digit-subset progression $\{0,1\}$, $\{1,7\}$, $\{0,1,3,6\}$, and all digits. Table~\ref{tab:digits} reports those results. Spectral clustering performs very well on $\{0,1\}$, substantially beats $k$-means on $\{0,1,3,6\}$ and on all digits, but does poorly on $\{1,7\}$ for the specific graph-construction choice used here. That is a useful lesson rather than a bug: spectral clustering is sensitive to the neighborhood graph, and a case where vanilla $k$-means already aligns extremely well with the class geometry can favor $k$-means.
+The project brief explicitly asks for the digit-subset progression $\{0,1\}$, $\{1,7\}$, $\{0,1,3,6\}$, and all digits. Table~\ref{tab:digits} reports those results. The outcome is deliberately presented as a mixed result rather than a blanket win for spectral clustering. Spectral clustering is excellent on $\{0,1\}$ and strong on all ten digits, but it performs poorly on $\{1,7\}$ and underperforms $k$-means on $\{0,1,3,6\}$ for the particular $k$-NN graph used here. Our hypothesis is that raw pixel-space Euclidean distances already separate some digit subsets nearly linearly, while the local graph can become brittle when classes have different stroke styles and densities. This is a useful negative result: spectral clustering is sensitive to graph construction, not a free improvement over $k$-means.
 
 \begin{table}[H]
 \centering
@@ -166,28 +166,28 @@ The project brief explicitly asks for the digit-subset progression $\{0,1\}$, $\
 \toprule
 Subset & Method & Accuracy & ARI & Purity \\
 \midrule
-$\{0,1\}$ & Spectral & 0.997 & 0.989 & 0.997 \\
+$\{0,1\}$ & Spectral & 0.994 & 0.978 & 0.994 \\
 $\{0,1\}$ & $k$-means & 0.994 & 0.978 & 0.994 \\
 \addlinespace
 $\{1,7\}$ & Spectral & 0.571 & 0.019 & 0.571 \\
 $\{1,7\}$ & $k$-means & 1.000 & 1.000 & 1.000 \\
 \addlinespace
-$\{0,1,3,6\}$ & Spectral & 0.994 & 0.985 & 0.994 \\
+$\{0,1,3,6\}$ & Spectral & 0.780 & 0.696 & 0.780 \\
 $\{0,1,3,6\}$ & $k$-means & 0.935 & 0.838 & 0.935 \\
 \addlinespace
-All digits & Spectral & 0.757 & 0.670 & 0.774 \\
+All digits & Spectral & 0.770 & 0.680 & 0.785 \\
 All digits & $k$-means & 0.589 & 0.468 & 0.623 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Figure~\ref{fig:digits} shows the $\{0,1,3,6\}$ subset after PCA to two dimensions for visualization only; the actual clustering was run in the full standardized feature space. Figure~\ref{fig:digitsbar} summarizes purity across the four required digit experiments.
+Figure~\ref{fig:digits} shows the $\{0,1,3,6\}$ subset after PCA to two dimensions. This plot is illustrative only: it compresses a 64-dimensional pixel space into two axes and therefore cannot fully explain the metric gap in Table~\ref{tab:digits}. The stronger evidence is the quantitative table and the purity summary in Figure~\ref{fig:digitsbar}.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.47\textwidth]{final_pic/digits_2d_spectral.png}
     \includegraphics[width=0.47\textwidth]{final_pic/digits_2d_kmeans.png}
-    \caption{Digits subset $\{0,1,3,6\}$ visualized in 2D by PCA. Spectral clustering gives a cleaner partition on this harder multi-class subset.}
+    \caption{Digits subset $\{0,1,3,6\}$ visualized in 2D by PCA. Both clusterings look fairly clean in this projection; the quantitative table is needed to evaluate the actual clustering quality.}
     \label{fig:digits}
 \end{figure}
 
@@ -212,12 +212,12 @@ Spectral clustering is especially natural on graph data. On Zachary's karate clu
 \end{figure}
 
 \section{Noise robustness and computational scaling}
-Figure~\ref{fig:noise} shows ARI under additive Gaussian noise on two moons. Spectral clustering remains perfect for small noise and clearly stronger than $k$-means over a useful range, but it eventually degrades once the local graph no longer reflects the underlying manifold. This is exactly the sort of robustness experiment the brief asks for.
+Figure~\ref{fig:noise} shows ARI under additive Gaussian noise on two moons. Spectral clustering is excellent at low noise, but performance becomes unstable once noise disrupts the local graph structure. The curve is not monotone: the small bump around intermediate noise is likely seed-level variation from a single trial, and should not be over-interpreted. The robust conclusion is that the method has a low-noise success regime and then rapidly becomes graph-construction sensitive.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.58\textwidth]{final_pic/noise_moons_ari.png}
-    \caption{ARI versus additive Gaussian noise on two moons.}
+    \caption{ARI versus additive Gaussian noise on two moons. Spectral clustering succeeds at low noise, then becomes unstable once the neighborhood graph no longer reliably tracks the moon geometry.}
     \label{fig:noise}
 \end{figure}
 
@@ -276,12 +276,12 @@ Figure~\ref{fig:failuretaxonomy} collects three interpretable failure or stress 
 \end{figure}
 
 \subsection{Runtime bottleneck breakdown}
-Figure~\ref{fig:bottleneck} expands the computational scaling analysis by decomposing spectral clustering runtime into graph construction, eigensolver, and final $k$-means-on-embedding stages.  For the largest sizes tested, the eigensolver dominates the runtime.  This agrees with the theoretical discussion: once a sparse graph has been built, the expensive stage is extracting the relevant eigenvectors of a large sparse Laplacian.
+Figure~\ref{fig:bottleneck} expands the computational scaling analysis by decomposing spectral clustering runtime into graph construction, eigensolver, and final $k$-means-on-embedding stages, and overlays the plain $k$-means baseline from the same benchmark.  For the largest sizes tested, the spectral total almost exactly tracks eigensolver time, while the baseline remains much smaller.  This agrees with the theoretical discussion: once a sparse graph has been built, the expensive stage is extracting the relevant eigenvectors of a large sparse Laplacian.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.68\textwidth]{final_pic/runtime_bottleneck_breakdown.png}
-    \caption{Runtime bottleneck breakdown for the spectral clustering pipeline.  The final $k$-means step is small; the eigensolver becomes the dominant cost as $n$ grows.}
+    \caption{Runtime bottleneck breakdown for the spectral clustering pipeline, with a plain $k$-means baseline overlaid.  The final $k$-means step is small; the eigensolver becomes the dominant cost as $n$ grows.}
     \label{fig:bottleneck}
 \end{figure}
 
@@ -292,10 +292,10 @@ Overall, the experiments match the standard theory quite well.
     \item On non-convex synthetic datasets, spectral clustering substantially outperforms $k$-means.
     \item On standard blob-like data, both methods are strong and $k$-means can even be slightly better.
     \item On graph/community datasets, spectral clustering is especially natural and strong.
-    \item On the required digit subsets, spectral clustering is not uniformly better; it helps strongly on the harder multi-class subsets but not on the easy $\{1,7\}$ pair. This is a useful reminder that graph construction is a modeling choice, not a free lunch.
+    \item On the required digit subsets, spectral clustering is not uniformly better; it wins on $\{0,1\}$ and all digits, but loses on $\{1,7\}$ and $\{0,1,3,6\}$ under the chosen graph. This is a useful reminder that graph construction is a modeling choice, not a free lunch.
 \end{itemize}
 
-The project brief also asks whether the results match expectations. The answer is mostly yes. The main surprise is the $\{1,7\}$ subset, where $k$-means already aligns almost perfectly with the raw feature geometry and our particular neighborhood graph is comparatively poor. This is an informative negative result and belongs in the report.
+The project brief also asks whether the results match expectations. The answer is mostly yes, but the exceptions are important. The main surprises are the $\{1,7\}$ and $\{0,1,3,6\}$ digit subsets, where $k$-means already aligns well with raw pixel geometry and our particular neighborhood graph is comparatively poor. The high-dimensional moons and bridge examples also show that a numerical advantage can be visually modest. These are informative negative results, so the revised captions deliberately avoid overstating what the plots show.
 
 \section{Reproducibility}
 The code is organized as a small Python workspace. Running

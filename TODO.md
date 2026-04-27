@@ -41,6 +41,29 @@ This file summarizes what has been completed and what remains optional.
   - Output: `final_pic/runtime_bottleneck_breakdown.png`
   - Metrics: `results/runtime_bottleneck_percent.csv`
 
+
+## Caption/text consistency audit completed
+
+- [x] Revised high-dimensional moons language.
+  - Change: downgraded the claim from a visually clean recovery to a modest quantitative advantage.
+  - Reason: the plot shows both methods are degraded after adding noisy coordinates.
+
+- [x] Revised digit-subset discussion.
+  - Change: emphasized that the PCA visualization is illustrative only and that the quantitative table is the stronger evidence.
+  - Reason: a 2D PCA projection can hide differences that appear in the full metric table.
+
+- [x] Revised noise-robustness language.
+  - Change: described the curve as unstable/non-monotone after graph disruption rather than as smooth degradation.
+  - Reason: the single-seed sweep has a small intermediate bump.
+
+- [x] Revised bridge example.
+  - Change: renamed it from a catastrophic failure to a stress/partial-degradation case.
+  - Reason: the visual plot still separates the two main masses reasonably.
+
+- [x] Revised runtime bottleneck figure.
+  - Change: overlaid the plain k-means baseline on the bottleneck plot.
+  - Reason: the text compares spectral runtime to k-means, so the figure should display the comparison directly.
+
 ## Optional remaining improvements
 
 - [ ] Repeated-seed robustness.

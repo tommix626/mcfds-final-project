@@ -92,8 +92,9 @@ def eigenvalue_plot(path: Path, eigs_dict: dict[str, list[float]], title: str) -
     plt.close()
 
 
-def stacked_runtime(path: Path, df, title: str) -> None:
-    plt.figure(figsize=(6.2, 4.3))
+def stacked_runtime(path: Path, df, title: str, baseline_df=None) -> None:
+    """Stacked spectral runtime bars, optionally with a plain k-means baseline line."""
+    plt.figure(figsize=(6.4, 4.4))
     x = np.arange(len(df))
     labels = [str(v) for v in df["n"].tolist()]
     bottom = np.zeros(len(df))
@@ -105,6 +106,9 @@ def stacked_runtime(path: Path, df, title: str) -> None:
         vals = df[col].to_numpy(dtype=float)
         plt.bar(x, vals, bottom=bottom, label=lab)
         bottom += vals
+    if baseline_df is not None and len(baseline_df) > 0:
+        base = baseline_df.set_index("n").loc[df["n"].tolist()]
+        plt.plot(x, base["total_seconds"].to_numpy(dtype=float), marker="D", linewidth=2, label="plain k-means baseline")
     plt.xticks(x, labels)
     plt.xlabel("Number of samples n")
     plt.ylabel("Seconds")

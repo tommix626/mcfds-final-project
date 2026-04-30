@@ -37,10 +37,10 @@ from .plots import (
     line_scaling,
     multi_panel_scatter,
     scatter_clusters,
+    sensitivity_slices,
     stacked_runtime,
 )
 from .utils import figures_dir, results_dir, save_json
-
 
 SUCCESS_NEIGHBORS = {
     "two_moons": 12,
@@ -63,7 +63,6 @@ DIGITS_SPECS = [
 ]
 
 
-
 def _record_rows(dataset: str, family: str, expectation: str, method: str, y_true: np.ndarray, y_pred: np.ndarray, extras: dict | None = None) -> dict:
     row = {
         "dataset": dataset,
@@ -77,11 +76,9 @@ def _record_rows(dataset: str, family: str, expectation: str, method: str, y_tru
     return row
 
 
-
 def _save_results(df: pd.DataFrame, name: str) -> pd.DataFrame:
     df.to_csv(results_dir() / name, index=False)
     return df
-
 
 
 def run_success_and_failure(random_state: int = 0) -> pd.DataFrame:
@@ -93,7 +90,7 @@ def run_success_and_failure(random_state: int = 0) -> pd.DataFrame:
 
     for family, datasets, neighbor_map in [
         ("success", success, SUCCESS_NEIGHBORS),
-        ("failure", failure, FAILURE_NEIGHBORS),
+        ("stress", failure, FAILURE_NEIGHBORS),
     ]:
         for name, (X, y, k, expectation) in datasets.items():
             X_plot = X[:, :2] if X.shape[1] > 2 else X
@@ -121,12 +118,12 @@ def run_success_and_failure(random_state: int = 0) -> pd.DataFrame:
                     km.timings,
                 )
             )
-            scatter_clusters(figs / f"{name}_spectral.png", X_plot, spec.labels, f"{name}: spectral clustering")
-            scatter_clusters(figs / f"{name}_kmeans.png", X_plot, km.labels, f"{name}: k-means")
+            xlab, ylab = ("x", "y") if X_plot.shape[1] == 2 else ("PC1", "PC2")
+            scatter_clusters(figs / f"{name}_spectral.png", X_plot, spec.labels, f"{name}: spectral clustering", xlab, ylab)
+            scatter_clusters(figs / f"{name}_kmeans.png", X_plot, km.labels, f"{name}: k-means", xlab, ylab)
 
     df = pd.DataFrame(rows)
     return _save_results(df, "synthetic_metrics.csv")
-
 
 
 def run_real_data(random_state: int = 0) -> pd.DataFrame:
@@ -138,12 +135,11 @@ def run_real_data(random_state: int = 0) -> pd.DataFrame:
     rows.append(_record_rows("iris", "real", "Spectral should be competitive; gains may be modest on nearly convex classes.", "spectral", y_iris, spec_iris.labels, spec_iris.timings))
     rows.append(_record_rows("iris", "real", "Spectral should be competitive; gains may be modest on nearly convex classes.", "kmeans", y_iris, km_iris.labels, km_iris.timings))
 
-    # Digit subset visualizations requested in the TODO/workup.
     X2, y2 = digits_pca_2d(classes=(0, 1, 3, 6), random_state=random_state)
     spec2 = ng_jordan_weiss(X2, n_clusters=4, n_neighbors=10, random_state=random_state)
     km2 = kmeans_baseline(X2, n_clusters=4, random_state=random_state)
-    scatter_clusters(figures_dir() / "digits_2d_spectral.png", X2, spec2.labels, "Digits {0,1,3,6} PCA(2): spectral")
-    scatter_clusters(figures_dir() / "digits_2d_kmeans.png", X2, km2.labels, "Digits {0,1,3,6} PCA(2): k-means")
+    scatter_clusters(figures_dir() / "digits_2d_spectral.png", X2, spec2.labels, "Digits {0,1,3,6} PCA(2): spectral", "PC1", "PC2")
+    scatter_clusters(figures_dir() / "digits_2d_kmeans.png", X2, km2.labels, "Digits {0,1,3,6} PCA(2): k-means", "PC1", "PC2")
 
     X_all, y_all = load_all_digits()
     for name, classes, k, neighbors in DIGITS_SPECS:
@@ -153,7 +149,7 @@ def run_real_data(random_state: int = 0) -> pd.DataFrame:
             Xd, yd = load_digits_subset(classes=classes, random_state=random_state)
         spec = ng_jordan_weiss(Xd, n_clusters=k, n_neighbors=neighbors, random_state=random_state)
         km = kmeans_baseline(Xd, n_clusters=k, random_state=random_state)
-        expectation = "Digits form semantically meaningful but imperfect clusters; spectral should help more on harder subset geometry."
+        expectation = "Digits form semantically meaningful but imperfect clusters; graph construction matters strongly here."
         rows.append(_record_rows(name, "digits", expectation, "spectral", yd, spec.labels, spec.timings))
         rows.append(_record_rows(name, "digits", expectation, "kmeans", yd, km.labels, km.timings))
 
@@ -164,7 +160,6 @@ def run_real_data(random_state: int = 0) -> pd.DataFrame:
     rows.append(_record_rows("karate_graph", "graph", "Spectral should recover the post-split factions more naturally than adjacency-row k-means.", "spectral", yk, spec_g.labels, spec_g.timings))
     rows.append(_record_rows("karate_graph", "graph", "Spectral should recover the post-split factions more naturally than adjacency-row k-means.", "kmeans_on_adjacency", yk, km_g.labels, km_g.timings))
 
-    # Graph figure
     import matplotlib.pyplot as plt
 
     pos = nx.spring_layout(Gk, seed=random_state)
@@ -175,7 +170,6 @@ def run_real_data(random_state: int = 0) -> pd.DataFrame:
     plt.savefig(figures_dir() / "karate_spectral.png", dpi=220)
     plt.close()
 
-    # SBM benchmark requested by PDF examples.
     Gs, ys = stochastic_block_model_graph(random_state=random_state)
     As = nx.to_numpy_array(Gs)
     spec_sbm = spectral_on_graph(As, n_clusters=3, random_state=random_state)
@@ -198,7 +192,6 @@ def run_real_data(random_state: int = 0) -> pd.DataFrame:
     return _save_results(df, "real_metrics.csv")
 
 
-
 def run_noise_experiment(random_state: int = 0) -> pd.DataFrame:
     from sklearn import datasets
 
@@ -216,7 +209,6 @@ def run_noise_experiment(random_state: int = 0) -> pd.DataFrame:
     line_noise(figures_dir() / "noise_moons_ari.png", sigmas, spec_scores, km_scores, "Two moons under additive Gaussian noise", "ARI")
     df = pd.DataFrame({"sigma": sigmas, "spectral_ari": spec_scores, "kmeans_ari": km_scores})
     return _save_results(df, "noise_metrics.csv")
-
 
 
 def run_scaling_benchmark(random_state: int = 0) -> pd.DataFrame:
@@ -279,13 +271,11 @@ def run_scaling_benchmark(random_state: int = 0) -> pd.DataFrame:
     return _save_results(df, "scaling_metrics.csv")
 
 
-
 def run_summary_figures() -> None:
     synthetic = pd.read_csv(results_dir() / "synthetic_metrics.csv")
     real_df = pd.read_csv(results_dir() / "real_metrics.csv")
     digits = pd.read_csv(results_dir() / "digits_metrics.csv")
 
-    # Success/failure ARI summary.
     syn_spec = synthetic[synthetic["method"] == "spectral"]
     syn_km = synthetic[synthetic["method"] == "kmeans"]
     categories = syn_spec["dataset"].tolist()
@@ -313,7 +303,6 @@ def run_summary_figures() -> None:
         "Purity",
     )
 
-    # Save a compact json summary for the README / downstream use.
     best = {}
     for name, group in pd.concat([synthetic, real_df], ignore_index=True).groupby("dataset"):
         best_row = group.sort_values(["ari", "purity", "accuracy"], ascending=False).iloc[0]
@@ -326,19 +315,19 @@ def run_summary_figures() -> None:
     save_json(best, results_dir() / "best_methods.json")
 
 
-
-
 def run_parameter_sensitivity(random_state: int = 0) -> pd.DataFrame:
-    """Phase-diagram style sweep over noise and kNN graph degree on two moons."""
     from sklearn import datasets
+
     noises = [0.02, 0.08, 0.14, 0.20, 0.28, 0.36]
     neighbors = [3, 5, 8, 12, 18, 28]
     rows: list[dict] = []
-    mat = np.zeros((len(noises), len(neighbors)))
+    spectral_mat = np.zeros((len(noises), len(neighbors)))
+    kmeans_col = np.zeros(len(noises))
     for i, noise in enumerate(noises):
         X, y = datasets.make_moons(n_samples=500, noise=noise, random_state=random_state)
         km = kmeans_baseline(X, n_clusters=2, random_state=random_state)
         km_ari = summarize(y, km.labels)["ari"]
+        kmeans_col[i] = km_ari
         for j, nn in enumerate(neighbors):
             try:
                 spec = ng_jordan_weiss(X, n_clusters=2, n_neighbors=nn, random_state=random_state)
@@ -346,15 +335,36 @@ def run_parameter_sensitivity(random_state: int = 0) -> pd.DataFrame:
             except Exception:
                 spec = ng_jordan_weiss(X, n_clusters=2, n_neighbors=nn, random_state=random_state, dense_threshold=X.shape[0] + 1)
                 ari = summarize(y, spec.labels)["ari"]
-            mat[i, j] = ari
+            spectral_mat[i, j] = ari
             rows.append({"dataset": "two_moons", "noise": noise, "n_neighbors": nn, "spectral_ari": ari, "kmeans_ari_at_same_noise": km_ari})
-    heatmap(figures_dir() / "parameter_sensitivity_heatmap.png", mat, [str(x) for x in neighbors], [str(x) for x in noises], "Spectral clustering sensitivity on two moons", "kNN graph degree", "Noise standard deviation", "ARI")
+
+    full_mat = np.concatenate([spectral_mat, kmeans_col[:, None]], axis=1)
+    heatmap(
+        figures_dir() / "parameter_sensitivity_heatmap.png",
+        full_mat,
+        [str(x) for x in neighbors] + ["k-means"],
+        [str(x) for x in noises],
+        "Spectral clustering sensitivity on two moons",
+        "Graph setting",
+        "Noise standard deviation",
+        "ARI",
+        separator_before_last=True,
+    )
+    sensitivity_slices(
+        figures_dir() / "parameter_sensitivity_examples.png",
+        neighbors,
+        noises,
+        full_mat,
+        kmeans_col,
+        selected_rows=[0, 2, 5],
+        selected_cols=[0, 3, 5],
+    )
     return _save_results(pd.DataFrame(rows), "parameter_sensitivity_metrics.csv")
 
 
 def run_eigengap_study(random_state: int = 0) -> pd.DataFrame:
-    """Compare first Laplacian eigenvalues on easy and hard examples."""
     from sklearn import datasets
+
     specs: list[tuple[str, np.ndarray, np.ndarray, int, int]] = []
     X_m, y_m = datasets.make_moons(n_samples=500, noise=0.08, random_state=random_state)
     specs.append(("moons", X_m, y_m, 2, 12))
@@ -389,8 +399,8 @@ def run_eigengap_study(random_state: int = 0) -> pd.DataFrame:
 
 
 def run_graph_construction_ablation(random_state: int = 0) -> pd.DataFrame:
-    """Compare kNN, mutual-kNN, and dense RBF graph construction choices."""
     from sklearn import datasets
+
     dataset_specs = []
     X_m, y_m = datasets.make_moons(n_samples=500, noise=0.10, random_state=random_state)
     dataset_specs.append(("moons", X_m, y_m, 2, 12))
@@ -400,7 +410,11 @@ def run_graph_construction_ablation(random_state: int = 0) -> pd.DataFrame:
     dataset_specs.append(("digits_0136", X_d, y_d, 4, 4))
     rows: list[dict] = []
     for name, X, y, k, nn in dataset_specs:
-        graphs = {"knn_rbf": knn_rbf_affinity_sparse(X, n_neighbors=nn), "mutual_knn_rbf": mutual_knn_rbf_affinity_sparse(X, n_neighbors=nn), "dense_rbf": dense_rbf_affinity(X)}
+        graphs = {
+            "knn_rbf": knn_rbf_affinity_sparse(X, n_neighbors=nn),
+            "mutual_knn_rbf": mutual_knn_rbf_affinity_sparse(X, n_neighbors=nn),
+            "dense_rbf": dense_rbf_affinity(X),
+        }
         for graph_name, W in graphs.items():
             try:
                 spec = spectral_from_affinity(W, n_clusters=k, random_state=random_state)
@@ -409,7 +423,9 @@ def run_graph_construction_ablation(random_state: int = 0) -> pd.DataFrame:
                 rows.append({"dataset": name, "graph": graph_name, "accuracy": np.nan, "ari": np.nan, "nmi": np.nan, "purity": np.nan, "error": str(e)})
     df = pd.DataFrame(rows)
     import matplotlib.pyplot as plt
+
     pivot = df.pivot(index="dataset", columns="graph", values="ari")
+    pivot = pivot[["dense_rbf", "knn_rbf", "mutual_knn_rbf"]]
     pivot.plot(kind="bar", figsize=(7.0, 4.4))
     plt.ylabel("ARI")
     plt.title("Graph construction ablation")
@@ -421,34 +437,46 @@ def run_graph_construction_ablation(random_state: int = 0) -> pd.DataFrame:
 
 
 def run_failure_taxonomy(random_state: int = 0) -> pd.DataFrame:
-    """Curate failure archetypes: disconnected graph, bridge connection, and varying density."""
     from sklearn import datasets
+
     rows: list[dict] = []
     panels = []
-    X1, y1 = datasets.make_moons(n_samples=200, noise=0.08, random_state=random_state)
-    # Use a deliberately underspecified graph.  Keeping n small forces the dense eigensolver, avoiding ARPACK non-convergence on a fragmented graph.
+
+    X1, y1 = datasets.make_moons(n_samples=220, noise=0.08, random_state=random_state)
     spec1 = ng_jordan_weiss(X1, n_clusters=2, n_neighbors=2, random_state=random_state, dense_threshold=250)
     rows.append({"failure_mode": "too_few_neighbors_fragmentation", "dataset": "moons", "n_neighbors": 2, **summarize(y1, spec1.labels)})
     panels.append((X1, spec1.labels, "Too few neighbors"))
-    X2, y2, k2, _ = make_failure_datasets(random_state=random_state)["bridge_failure"]
-    spec2 = ng_jordan_weiss(X2, n_clusters=k2, n_neighbors=14, random_state=random_state)
-    rows.append({"failure_mode": "bridge_connection", "dataset": "bridge", "n_neighbors": 14, **summarize(y2, spec2.labels)})
-    panels.append((X2, spec2.labels, "Bridge connection"))
+
     rs = np.random.default_rng(random_state)
-    dense = rs.normal(loc=[-2.0, 0.0], scale=0.22, size=(90, 2))
-    diffuse = rs.normal(loc=[1.7, 0.0], scale=0.85, size=(90, 2))
-    tiny = rs.normal(loc=[0.0, 2.2], scale=0.18, size=(25, 2))
+    left = rs.normal(loc=[-3.3, 0.0], scale=[0.42, 0.42], size=(220, 2))
+    right = rs.normal(loc=[3.3, 0.0], scale=[0.42, 0.42], size=(220, 2))
+    bridge_x = np.linspace(-2.8, 2.8, 180)
+    bridge_y = rs.normal(loc=0.0, scale=0.06, size=bridge_x.shape[0])
+    bridge = np.c_[bridge_x, bridge_y]
+    X2 = np.vstack([left, right, bridge])
+    y2 = np.concatenate([np.zeros(len(left), dtype=int), np.ones(len(right), dtype=int), np.zeros(len(bridge), dtype=int)])
+    spec2 = ng_jordan_weiss(X2, n_clusters=2, n_neighbors=16, random_state=random_state)
+    rows.append({"failure_mode": "thin_long_bridge", "dataset": "bridge_long", "n_neighbors": 16, **summarize(y2, spec2.labels)})
+    panels.append((X2, spec2.labels, "Long thin bridge"))
+
+    dense = rs.normal(loc=[-2.2, 0.1], scale=0.20, size=(90, 2))
+    diffuse = rs.normal(loc=[1.9, 0.0], scale=1.15, size=(170, 2))
+    tiny = rs.normal(loc=[-0.1, 2.4], scale=0.23, size=(24, 2))
     X3 = np.vstack([dense, diffuse, tiny])
-    y3 = np.concatenate([np.zeros(len(dense), dtype=int), np.ones(len(diffuse), dtype=int), np.full(len(tiny), 2, dtype=int)])
-    spec3 = ng_jordan_weiss(X3, n_clusters=3, n_neighbors=10, random_state=random_state, dense_threshold=250)
-    rows.append({"failure_mode": "varying_density_imbalance", "dataset": "density_imbalance", "n_neighbors": 10, **summarize(y3, spec3.labels)})
+    y3 = np.concatenate([
+        np.zeros(len(dense), dtype=int),
+        np.ones(len(diffuse), dtype=int),
+        np.full(len(tiny), 2, dtype=int),
+    ])
+    spec3 = ng_jordan_weiss(X3, n_clusters=3, n_neighbors=10, random_state=random_state, dense_threshold=400)
+    rows.append({"failure_mode": "varying_density_fragility", "dataset": "density_fragility", "n_neighbors": 10, **summarize(y3, spec3.labels)})
     panels.append((X3, spec3.labels, "Varying density"))
-    multi_panel_scatter(figures_dir() / "failure_taxonomy.png", panels, "Three spectral clustering failure archetypes")
+
+    multi_panel_scatter(figures_dir() / "failure_taxonomy.png", panels, "Graph fragility archetypes", xlabel="x", ylabel="y")
     return _save_results(pd.DataFrame(rows), "failure_taxonomy_metrics.csv")
 
 
 def run_bottleneck_breakdown(random_state: int = 0) -> pd.DataFrame:
-    """More explicit runtime bottleneck figure derived from the scaling benchmark."""
     df = pd.read_csv(results_dir() / "scaling_metrics.csv")
     sdf = df[df["method"] == "spectral"].copy()
     kdf = df[df["method"] == "kmeans"].copy()

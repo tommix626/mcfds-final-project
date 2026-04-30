@@ -526,14 +526,28 @@ Figures~\ref{fig:paramsensitivityrows} and~\ref{fig:paramsensitivitycols} transl
 \end{figure}
 
 \subsection{Eigengap study}
-A common heuristic for spectral clustering is that the first few eigenvalues of the graph Laplacian reveal the number and strength of clusters. Figure~\ref{fig:eigengap} compares the smallest eigenvalues on several datasets. The stochastic block model has a clear gap after the third eigenvalue and is perfectly recovered, which matches the textbook story. The two-moons case also has useful low-eigenvalue structure. But the overlapping blobs and digit cases are less clean: a visible gap alone is not a complete certificate of good clustering. This experiment makes the eigengap heuristic concrete while also showing its limitation.
+The eigengap heuristic selects $\hat{k} = \arg\max_i (\lambda_{i+1} - \lambda_i)$: the number of clusters is where the sorted eigenvalues of $L_\mathrm{sym}$ show the largest jump. Figure~\ref{fig:eigengap} evaluates this heuristic across five datasets. The left panel shows eigenvalue spectra on a \emph{log scale} (omitting $\lambda_1 = 0$); the right panel shows the raw eigengaps $\delta_i = \lambda_{i+1} - \lambda_i$ with dashed vertical lines at the true $k$.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.70\textwidth]{final_pic/eigengap_study.png}
-    \caption{Smallest eigenvalues of the symmetric normalized graph Laplacian. A clean eigengap often correlates with clusterability, but it is not by itself a guarantee of high clustering accuracy.}
+    \includegraphics[width=\textwidth]{final_pic/eigengap_study.png}
+    \caption{Left: eigenvalue spectra of $L_\mathrm{sym}$ in log scale ($\lambda_1=0$ omitted; dashed lines mark the true $k$ per dataset). Right: eigengap $\delta_i = \lambda_{i+1} - \lambda_i$; the heuristic picks $k$ at the largest spike. The SBM spike at $i=3$ ($\delta_3 = 0.32$) is $9\times$ the next largest gap; the other four datasets produce only small, ambiguous gaps.}
     \label{fig:eigengap}
 \end{figure}
+
+The four datasets tell qualitatively different stories:
+
+\begin{itemize}[leftmargin=1.4em]
+    \item \textbf{Stochastic block model ($k^*=3$):} Textbook success. $\lambda_2 \approx 0.17$, $\lambda_3 \approx 0.21$, $\lambda_4 \approx 0.52$, giving $\delta_3 = 0.32$---a $9\times$ ratio over the next largest gap. The heuristic unambiguously selects $k=3$, matching the planted community count.
+
+    \item \textbf{Two moons and circles ($k^*=2$):} $\lambda_2 \approx 10^{-16}$ (numerically zero), signaling that the $k$-NN graph has two near-disconnected components---exactly the two manifold arms. The log-scale plot makes this visible as the bottom of the clipped axis; on linear scale these values are entirely hidden. However, the absolute gap $\delta_2 \approx 0.001$ is tiny. The heuristic would fail in absolute terms but the near-zero multiplicity is informative if interpreted correctly.
+
+    \item \textbf{Overlapping blobs ($k^*=3$):} No dominant gap. Eigenvalues increase gradually with no large jump near $i=3$. All consecutive gaps ($\delta_1 \approx 0.006$, $\delta_2 \approx 0.006$, $\delta_3 \approx 0.004$) are similar in magnitude. This is the expected behavior when clusters have heavy overlap: the graph does not exhibit a clean community structure, so no spectral gap forms.
+
+    \item \textbf{Digits $\{0,1,3,6\}$ ($k^*=4$, $m=4$ neighbors):} The graph is fragmented into three near-disconnected components ($\lambda_2 \approx \lambda_3 \approx 10^{-16}$), hinting at only 3 clusters. The largest eigengap in the range shown appears near $i=6$ ($\delta_6 \approx 0.008$), which would lead the heuristic to predict $k=6$---far from the truth. This is partly a graph construction failure: 4 neighbors in 64-dimensional pixel space produces a fragile, over-sparse graph that breaks the local community structure.
+\end{itemize}
+
+The takeaway is sharper than the previous linear-scale view: the eigengap heuristic is \emph{reliably useful only when the planted community structure is strong} (SBM). For feature-space manifold datasets the gap values are tiny in absolute terms and hidden on a linear scale; for overlapping or high-dimensional datasets the heuristic can be actively misleading. Log scale is necessary to even diagnose whether any gap exists.
 
 \subsection{Graph construction ablation}
 The strongest additional lesson is that graph construction is the primary inductive bias. We ablate three affinity matrix designs, each placing a different locality prior on the similarity structure.

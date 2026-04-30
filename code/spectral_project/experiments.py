@@ -422,7 +422,9 @@ def run_eigengap_study(random_state: int = 0) -> pd.DataFrame:
     gap_sbm = float(vals_sbm[3] - vals_sbm[2]) if len(vals_sbm) > 3 else np.nan
     for idx, val in enumerate(vals_sbm, start=1):
         rows.append({"dataset": "sbm", "index": idx, "eigenvalue": float(val), "k_true": 3, "gap_after_k": gap_sbm, "ari": metrics_sbm["ari"]})
-    eigenvalue_plot(figures_dir() / "eigengap_study.png", eigs_dict, "Small Laplacian eigenvalues across datasets")
+    k_true_dict = {name: k for name, X, y, k, nn in specs}
+    k_true_dict["sbm"] = 3
+    eigenvalue_plot(figures_dir() / "eigengap_study.png", eigs_dict, "Small Laplacian eigenvalues across datasets", k_true_dict=k_true_dict)
     return _save_results(pd.DataFrame(rows), "eigengap_metrics.csv")
 
 

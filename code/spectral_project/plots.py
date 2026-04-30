@@ -101,18 +101,50 @@ def heatmap(
 
 
 
-def eigenvalue_plot(path: Path, eigs_dict: dict[str, list[float]], title: str) -> None:
-    plt.figure(figsize=(6.2, 4.4))
+def eigenvalue_plot(
+    path: Path,
+    eigs_dict: dict[str, list[float]],
+    title: str,
+    k_true_dict: dict[str, int] | None = None,
+) -> None:
+    fig, axes = plt.subplots(1, 2, figsize=(12.0, 4.8))
+
+    # --- Left: eigenvalue spectra, log scale, skip λ_1 (always 0) ---
+    ax = axes[0]
+    colors = {}
     for name, vals in eigs_dict.items():
-        xs = np.arange(1, len(vals) + 1)
-        plt.plot(xs, vals, marker="o", label=name)
-    plt.xlabel("Eigenvalue index")
-    plt.ylabel("Smallest eigenvalues of $L_{sym}$")
-    plt.title(title)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(path, dpi=220)
-    plt.close()
+        xs = np.arange(2, len(vals) + 1)
+        ys = np.maximum(np.array(vals[1:]), 1e-6)   # clip to avoid log(0)
+        line, = ax.semilogy(xs, ys, marker="o", markersize=4, label=name)
+        colors[name] = line.get_color()
+    if k_true_dict:
+        for name, k in k_true_dict.items():
+            ax.axvline(k, color=colors.get(name, "gray"), linestyle="--",
+                       linewidth=1.0, alpha=0.55)
+    ax.set_xlabel("Eigenvalue index $i$")
+    ax.set_ylabel(r"$\lambda_i(L_{\mathrm{sym}})$  [log scale]")
+    ax.set_title("Spectra (log scale, $\\lambda_1$ omitted; dashed = $k^*$)")
+    ax.legend(fontsize=8)
+
+    # --- Right: eigengaps δ_i = λ_{i+1} − λ_i ---
+    ax2 = axes[1]
+    for name, vals in eigs_dict.items():
+        gaps = np.diff(np.array(vals))
+        xs = np.arange(1, len(gaps) + 1)
+        ax2.plot(xs, gaps, marker="o", markersize=4, label=name, color=colors.get(name))
+    if k_true_dict:
+        for name, k in k_true_dict.items():
+            ax2.axvline(k, color=colors.get(name, "gray"), linestyle="--",
+                        linewidth=1.0, alpha=0.55)
+    ax2.set_xlabel("Gap index $i$  ($\\lambda_{i+1} - \\lambda_i$)")
+    ax2.set_ylabel("Eigengap magnitude")
+    ax2.set_title("Eigengaps (heuristic: largest gap $\\Rightarrow$ $k^*$; dashed = true $k$)")
+    ax2.legend(fontsize=8)
+
+    fig.suptitle(title, fontsize=11)
+    fig.tight_layout()
+    fig.savefig(path, dpi=220)
+    plt.close(fig)
 
 
 

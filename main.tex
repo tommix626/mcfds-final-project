@@ -392,14 +392,14 @@ Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectr
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{final_pic/overlapping_groundtruth_kmeans_njw.png}
-    \caption{Overlapping-blobs stress case in original 2D coordinates $(x,y)$, shown as ground truth (left), $k$-means (middle), and NJW spectral clustering (right). Because the classes overlap strongly in feature space, there is no clean boundary for either method; this figure illustrates ambiguity-driven failure rather than a parameter-tuning artifact.}
+    \caption{Overlapping-blobs stress case in original 2D coordinates $(x,y)$, shown as ground truth (left), $k$-means (middle), and NJW spectral clustering (right). Because the classes overlap strongly in feature space, there is no clean boundary for either method; this is an ambiguity-driven failure - no method can every recover the label - unless embed into a higher dimension space with better feature representation.}
     \label{fig:failure_overlap}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{final_pic/bridge_groundtruth_kmeans_njw.png}
-    \caption{Bridge-connected stress case in original 2D coordinates $(x,y)$, shown as ground truth (left), $k$-means (middle), and NJW spectral clustering (right). The thin bridge creates ambiguous assignments near the connection; this is the failure mode discussed in the text, where neither method cleanly matches the reference partition.}
+    \caption{Bridge-connected stress case in original 2D coordinates $(x,y)$, shown as ground truth (left), $k$-means (middle), and NJW spectral clustering (right). The thin bridge creates ambiguous assignments near the connection.}
     \label{fig:failure2}
 \end{figure}
 
@@ -451,7 +451,7 @@ Figure~\ref{fig:digits} shows the $\{0,1,3,6\}$ subset after PCA to two dimensio
 On Iris, spectral clustering also improves over $k$-means: ARI rises from $0.620$ to $0.707$. This is a more modest gain than on clearly non-convex synthetic data, which matches expectations.
 
 \section{Results: graph data}
-Spectral clustering is especially natural on graph data. On Zachary's karate club graph, spectral clustering reaches accuracy $0.971$ and ARI $0.882$, far above the adjacency-row $k$-means baseline (accuracy $0.676$, ARI $0.109$). On a planted stochastic block model, spectral clustering perfectly recovers the communities, while adjacency-row $k$-means is also strong but slightly worse. These two experiments strengthen the community-detection side of the study.
+Spectral clustering is especially natural on graph data. On Zachary's karate club graph, spectral clustering reaches accuracy $0.971$ and ARI $0.882$, far above the adjacency-row $k$-means baseline (accuracy $0.676$, ARI $0.109$). On a planted stochastic block model, spectral clustering perfectly recovers the communities, while adjacency-row $k$-means is also strong but slightly worse. These two experiments strengthen the usefulness of spectral clustering for community-detection.
 
 \begin{figure}[H]
     \centering
@@ -483,8 +483,9 @@ Figure~\ref{fig:scaling} reports runtime and approximate memory scaling. The plo
 
 \section{Additional experiments}
 
+Below are some extra experiments we do for fun! They are not required in the project outline. Feel free to skip them for grading but they are pretty interesting!
 \subsection{Parameter sensitivity map}
-Spectral clustering depends strongly on the graph it constructs. Figure~\ref{fig:paramsensitivity} shows a phase-diagram style sweep on two moons, varying both the feature noise and the number of nearest neighbors in the graph. The final red-outlined column reports the $k$-means baseline at the same noise level. The main pattern is useful: there is a broad stable band at moderate neighbor counts, but too few neighbors can fragment the graph, while too many neighbors can wash out the two-moon geometry once noise is substantial. In the high-neighbor regime, performance often approaches the $k$-means baseline, consistent with the idea that an overly dense neighborhood graph loses the local manifold structure that gives spectral clustering its advantage.
+Spectral clustering depends strongly on the graph it constructs. Figure~\ref{fig:paramsensitivity} shows a phase-diagram style sweep on two moons, varying both the \textbf{feature noise} and the \textbf{number of nearest neighbors} in the graph. The final red-outlined column reports the $k$-means baseline at the same noise level. The main pattern is useful: there is a broad stable band at moderate neighbor counts, but too few neighbors can fragment the graph, while too many neighbors can wash out the two-moon geometry once noise is substantial. In the high-neighbor regime, performance often approaches the $k$-means baseline, consistent with the idea that an overly dense neighborhood graph loses the local manifold structure that gives spectral clustering its advantage.
 
 \begin{figure}[H]
     \centering
@@ -533,15 +534,15 @@ Here $\mathcal{N}_m(i)$ denotes the directed $m$-nearest-neighbor set of point $
     \label{fig:graphablation}
 \end{figure}
 
-\subsection{Graph fragility archetypes}
-Figure~\ref{fig:failuretaxonomy} collects three interpretable fragility modes. First, too few neighbors can fragment a manifold graph. Second, a long thin bridge of intermediate points can remove the clean low-density separation between two masses. Third, varying density and imbalance can make a single global neighborhood scale inappropriate. The point of this figure is not that spectral clustering always fails on such inputs; rather, it illustrates how fixed graph parameters can become mismatched to the local geometry of the data.
+% \subsection{Graph fragility archetypes}
+% Figure~\ref{fig:failuretaxonomy} collects three interpretable fragility modes. First, too few neighbors can fragment a manifold graph. Second, a long thin bridge of intermediate points can remove the clean low-density separation between two masses. Third, varying density and imbalance can make a single global neighborhood scale inappropriate. The point of this figure is not that spectral clustering always fails on such inputs; rather, it illustrates how fixed graph parameters can become mismatched to the local geometry of the data.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{final_pic/failure_taxonomy.png}
-    \caption{Three graph-fragility archetypes in original 2D coordinates $(x,y)$: graph fragmentation, a long thin bridge, and varying-density geometry.}
-    \label{fig:failuretaxonomy}
-\end{figure}
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=\textwidth]{final_pic/failure_taxonomy.png}
+%     \caption{Three graph-fragility archetypes in original 2D coordinates $(x,y)$: graph fragmentation, a long thin bridge, and varying-density geometry.}
+%     \label{fig:failuretaxonomy}
+% \end{figure}
 
 \subsection{Runtime bottleneck breakdown}
 Figure~\ref{fig:bottleneck} expands the computational scaling analysis by decomposing spectral clustering runtime into graph construction, eigensolver, and final $k$-means-on-embedding stages, and overlays the plain $k$-means baseline from the same benchmark. For the largest sizes tested, the spectral total almost exactly tracks eigensolver time, while the baseline remains much smaller. This agrees with the theoretical discussion: once a sparse graph has been built, the expensive stage is extracting the relevant eigenvectors of a large sparse Laplacian.

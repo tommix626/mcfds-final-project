@@ -182,3 +182,102 @@ def sensitivity_slices(path: Path, neighbor_values, noise_values, spectral_matri
     fig.tight_layout()
     fig.savefig(path, dpi=220)
     plt.close(fig)
+
+
+def sensitivity_scatter_rows(
+    path: Path,
+    scatter_cache: dict,
+    noise_values: list,
+    neighbor_values: list,
+    row_noise_idxs: list[int],
+    col_neighbor_idxs: list[int],
+) -> None:
+    """Grid of actual scatter plots: rows = noise levels, cols = kNN degrees."""
+    n_rows = len(row_noise_idxs)
+    n_cols = len(col_neighbor_idxs)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(3.2 * n_cols, 2.8 * n_rows))
+    if n_rows == 1:
+        axes = axes[np.newaxis, :]
+    if n_cols == 1:
+        axes = axes[:, np.newaxis]
+
+    for ri, ni in enumerate(row_noise_idxs):
+        for ci, ki in enumerate(col_neighbor_idxs):
+            ax = axes[ri, ci]
+            key = (ni, ki)
+            if key in scatter_cache:
+                X, _y_true, y_pred, ari = scatter_cache[key]
+                ax.scatter(X[:, 0], X[:, 1], c=y_pred, s=5, cmap="tab10", alpha=0.75, linewidths=0)
+                ax.set_title(f"noise={noise_values[ni]:.2f}, k={neighbor_values[ki]}\nARI={ari:.2f}", fontsize=8)
+            else:
+                ax.set_title(f"noise={noise_values[ni]:.2f}, k={neighbor_values[ki]}", fontsize=8)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_aspect("equal", adjustable="box")
+        axes[ri, 0].set_ylabel(f"σ={noise_values[ni]:.2f}", fontsize=8)
+
+    for ci, ki in enumerate(col_neighbor_idxs):
+        axes[0, ci].set_xlabel(f"k={neighbor_values[ki]}", fontsize=8, labelpad=2)
+        axes[0, ci].xaxis.set_label_position("top")
+
+    fig.suptitle("Representative rows: fixed noise level, varying kNN graph degree", fontsize=10, y=1.01)
+    fig.tight_layout()
+    fig.savefig(path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def sensitivity_scatter_cols(
+    path: Path,
+    scatter_cache: dict,
+    noise_values: list,
+    neighbor_values: list,
+    all_noise_idxs: list[int],
+    fixed_neighbor_idx: int,
+) -> None:
+    """Row of scatter plots: fixed kNN degree, varying noise."""
+    n = len(all_noise_idxs)
+    ncols = n
+    fig, axes = plt.subplots(1, ncols, figsize=(3.0 * ncols, 3.0))
+
+    for ci, ni in enumerate(all_noise_idxs):
+        ax = axes[ci]
+        key = (ni, fixed_neighbor_idx)
+        if key in scatter_cache:
+            X, _y_true, y_pred, ari = scatter_cache[key]
+            ax.scatter(X[:, 0], X[:, 1], c=y_pred, s=5, cmap="tab10", alpha=0.75, linewidths=0)
+            ax.set_title(f"noise={noise_values[ni]:.2f}\nARI={ari:.2f}", fontsize=8)
+        else:
+            ax.set_title(f"noise={noise_values[ni]:.2f}", fontsize=8)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_aspect("equal", adjustable="box")
+
+    fig.suptitle(f"Representative column: k={neighbor_values[fixed_neighbor_idx]} fixed, noise increasing left→right", fontsize=10)
+    fig.tight_layout()
+    fig.savefig(path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def groundtruth_comparison(
+    path: Path,
+    X: np.ndarray,
+    y_true: np.ndarray,
+    km_labels: np.ndarray,
+    spec_labels: np.ndarray,
+    title: str,
+    xlabel: str = "x",
+    ylabel: str = "y",
+) -> None:
+    """3-panel comparison: ground truth, k-means, NJW spectral."""
+    fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.2))
+    subtitles = ["Ground truth", "k-means", "NJW spectral"]
+    for ax, labels, subtitle in zip(axes, [y_true, km_labels, spec_labels], subtitles):
+        ax.scatter(X[:, 0], X[:, 1], c=labels, s=10, cmap="tab10", alpha=0.8, linewidths=0)
+        ax.set_title(subtitle, fontsize=10)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_aspect("equal", adjustable="box")
+    fig.suptitle(title, fontsize=12)
+    fig.tight_layout()
+    fig.savefig(path, dpi=220)
+    plt.close(fig)

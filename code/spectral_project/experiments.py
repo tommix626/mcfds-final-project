@@ -32,11 +32,14 @@ from .metrics import summarize
 from .plots import (
     bar_comparison,
     eigenvalue_plot,
+    groundtruth_comparison,
     heatmap,
     line_noise,
     line_scaling,
     multi_panel_scatter,
     scatter_clusters,
+    sensitivity_scatter_cols,
+    sensitivity_scatter_rows,
     sensitivity_slices,
     stacked_runtime,
 )
@@ -320,6 +323,13 @@ def run_parameter_sensitivity(random_state: int = 0) -> pd.DataFrame:
 
     noises = [0.02, 0.08, 0.14, 0.20, 0.28, 0.36]
     neighbors = [3, 5, 8, 12, 18, 28]
+
+    # Representative indices for scatter grids
+    ROW_NOISE_IDXS = [0, 4, 5]      # noise=0.02, 0.28, 0.36
+    COL_NEIGHBOR_IDXS = [0, 2, 3, 5]  # k=3, 8, 12, 28
+    COL_FIXED_NEIGHBOR_IDX = 3       # k=12 held fixed for column sweep
+
+    scatter_cache: dict = {}
     rows: list[dict] = []
     spectral_mat = np.zeros((len(noises), len(neighbors)))
     kmeans_col = np.zeros(len(noises))
@@ -338,6 +348,12 @@ def run_parameter_sensitivity(random_state: int = 0) -> pd.DataFrame:
             spectral_mat[i, j] = ari
             rows.append({"dataset": "two_moons", "noise": noise, "n_neighbors": nn, "spectral_ari": ari, "kmeans_ari_at_same_noise": km_ari})
 
+            # Cache scatter data for representative configurations
+            need_for_rows = (i in ROW_NOISE_IDXS and j in COL_NEIGHBOR_IDXS)
+            need_for_cols = (i in range(len(noises)) and j == COL_FIXED_NEIGHBOR_IDX)
+            if need_for_rows or need_for_cols:
+                scatter_cache[(i, j)] = (X.copy(), y.copy(), spec.labels.copy(), ari)
+
     full_mat = np.concatenate([spectral_mat, kmeans_col[:, None]], axis=1)
     heatmap(
         figures_dir() / "parameter_sensitivity_heatmap.png",
@@ -350,15 +366,27 @@ def run_parameter_sensitivity(random_state: int = 0) -> pd.DataFrame:
         "ARI",
         separator_before_last=True,
     )
-    sensitivity_slices(
-        figures_dir() / "parameter_sensitivity_examples.png",
-        neighbors,
+
+    # Scatter grid: rows = noise levels, cols = kNN degrees
+    sensitivity_scatter_rows(
+        figures_dir() / "parameter_sensitivity_rows.png",
+        scatter_cache,
         noises,
-        full_mat,
-        kmeans_col,
-        selected_rows=[0, 2, 5],
-        selected_cols=[0, 3, 5],
+        neighbors,
+        row_noise_idxs=ROW_NOISE_IDXS,
+        col_neighbor_idxs=COL_NEIGHBOR_IDXS,
     )
+
+    # Scatter strip: fixed k=12, all noise levels
+    sensitivity_scatter_cols(
+        figures_dir() / "parameter_sensitivity_cols.png",
+        scatter_cache,
+        noises,
+        neighbors,
+        all_noise_idxs=list(range(len(noises))),
+        fixed_neighbor_idx=COL_FIXED_NEIGHBOR_IDX,
+    )
+
     return _save_results(pd.DataFrame(rows), "parameter_sensitivity_metrics.csv")
 
 
@@ -476,6 +504,28 @@ def run_failure_taxonomy(random_state: int = 0) -> pd.DataFrame:
     return _save_results(pd.DataFrame(rows), "failure_taxonomy_metrics.csv")
 
 
+def run_failure_comparison_figures(random_state: int = 0) -> None:
+    """Regenerate 3-panel ground-truth/k-means/spectral figures for each failure mode."""
+    failure = make_failure_datasets(random_state=random_state)
+    figs = figures_dir()
+    name_to_outfile = {
+        "overlapping_blobs_failure": "overlapping_groundtruth_kmeans_njw.png",
+        "bridge_failure": "bridge_groundtruth_kmeans_njw.png",
+    }
+    title_map = {
+        "overlapping_blobs_failure": "Overlapping blobs: ground truth vs. k-means vs. NJW spectral",
+        "bridge_failure": "Bridge stress case: ground truth vs. k-means vs. NJW spectral",
+    }
+    for name, (X, y, k, _) in failure.items():
+        spec = ng_jordan_weiss(X, n_clusters=k, n_neighbors=FAILURE_NEIGHBORS[name], random_state=random_state)
+        km = kmeans_baseline(X, n_clusters=k, random_state=random_state)
+        groundtruth_comparison(
+            figs / name_to_outfile[name],
+            X, y, km.labels, spec.labels,
+            title=title_map[name],
+        )
+
+
 def run_bottleneck_breakdown(random_state: int = 0) -> pd.DataFrame:
     df = pd.read_csv(results_dir() / "scaling_metrics.csv")
     sdf = df[df["method"] == "spectral"].copy()
@@ -500,6 +550,7 @@ def run_all_experiments(random_state: int = 0) -> dict[str, pd.DataFrame]:
         "bottleneck": run_bottleneck_breakdown(random_state=random_state),
     }
     run_summary_figures()
+    run_failure_comparison_figures(random_state=random_state)
     combined = pd.concat([outputs["synthetic"], outputs["real"]], ignore_index=True)
     _save_results(combined, "all_metrics.csv")
     return outputs

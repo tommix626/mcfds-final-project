@@ -485,22 +485,44 @@ Figure~\ref{fig:scaling} reports runtime and approximate memory scaling. The plo
 
 Below are some extra experiments we do for fun! They are not required in the project outline. Feel free to skip them for grading but they are pretty interesting!
 \subsection{Parameter sensitivity map}
-Spectral clustering depends strongly on the graph it constructs. Figure~\ref{fig:paramsensitivity} shows a phase-diagram style sweep on two moons, varying both the \textbf{feature noise} and the \textbf{number of nearest neighbors} in the graph. The final red-outlined column reports the $k$-means baseline at the same noise level. The main pattern is useful: there is a broad stable band at moderate neighbor counts, but too few neighbors can fragment the graph, while too many neighbors can wash out the two-moon geometry once noise is substantial. In the high-neighbor regime, performance often approaches the $k$-means baseline, consistent with the idea that an overly dense neighborhood graph loses the local manifold structure that gives spectral clustering its advantage.
+Spectral clustering depends strongly on the graph it constructs. Figure~\ref{fig:paramsensitivity} shows a phase-diagram style sweep on two moons, varying both the \textbf{feature noise} $\sigma$ and the \textbf{number of nearest neighbors} $k$ in the $k$-NN graph. The final red-outlined column reports the $k$-means ARI at the same noise level, providing a reference for when spectral clustering degenerates to centroid-style behavior.
+
+The dominant structure in the heatmap is a stable high-ARI band at moderate $k$ under low noise. Two distinct failure regimes emerge:
+\begin{itemize}[leftmargin=1.4em]
+    \item \textbf{Too few neighbors ($k=3$):} The graph becomes sparse enough to fragment, and the two moons disconnect into many small components. The Fiedler vector no longer captures the intended two-way cut.
+    \item \textbf{Too many neighbors (large $k$) under high noise:} Dense connectivity washes out the manifold geometry. In this regime the $k$-NN graph resembles a dense RBF graph, and spectral clustering performance collapses toward the $k$-means baseline in the red column---a concrete illustration of the asymptotic equivalence between over-connected spectral graphs and centroid clustering.
+\end{itemize}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.78\textwidth]{final_pic/parameter_sensitivity_heatmap.png}
-    \caption{Parameter sensitivity map on two moons. Each cell is ARI for normalized spectral clustering as the noise level and $k$-NN graph degree vary; the red-outlined column gives the $k$-means reference value at the same noise level.}
+    \caption{Parameter sensitivity map on two moons. Each cell reports ARI for NJW spectral clustering as noise $\sigma$ (rows) and graph degree $k$ (columns) vary. The red-outlined column gives the $k$-means baseline at the same noise level; note how spectral ARI converges to it when $k$ is large.}
     \label{fig:paramsensitivity}
 \end{figure}
 
-Figure~\ref{fig:paramsensitivityslices} makes this more concrete by showing representative rows and columns of the heatmap. Along rows, the low-noise case shows a wide range of graph degrees with near-perfect recovery, while the high-noise case remains poor across the entire sweep. Along columns, increasing noise gradually erodes the local graph signal until the spectral method behaves little better than the centroid baseline.
+Figures~\ref{fig:paramsensitivityrows} and~\ref{fig:paramsensitivitycols} translate the heatmap into actual cluster assignments so that qualitative geometry is visible, not just summary statistics.
+
+\textbf{Row slices (Figure~\ref{fig:paramsensitivityrows}).} Each row fixes the noise level and sweeps $k \in \{3, 8, 12, 28\}$.
+\begin{itemize}[leftmargin=1.4em]
+    \item \emph{Low noise ($\sigma=0.02$):} All four $k$ values recover clean two-moon assignments (ARI $\approx 1.0$). The moon geometry is so strong that almost any connected graph finds it.
+    \item \emph{High noise ($\sigma=0.28$):} ARI drops to $\approx 0.2$ across the board. The scatter plots show that points from both moons are scrambled in feature space; no $k$ value rescues the structure.
+    \item \emph{Extreme noise ($\sigma=0.36$):} ARI collapses to $\approx 0.05$---near random. Visually the two moons are entirely merged, and spectral clustering assigns clusters that bear no relationship to the original labels.
+\end{itemize}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.92\textwidth]{final_pic/parameter_sensitivity_examples.png}
-    \caption{Representative slices of the sensitivity map. Left: ARI as graph degree varies for several fixed noise levels, with dashed $k$-means references. Right: ARI as noise varies for several fixed graph degrees.}
-    \label{fig:paramsensitivityslices}
+    \includegraphics[width=\textwidth]{final_pic/parameter_sensitivity_rows.png}
+    \caption{Representative row slices of the sensitivity map. Each panel shows actual NJW cluster assignments on two moons for a fixed noise level $\sigma$ (row) and graph degree $k$ (column). Color encodes predicted cluster. The ARI annotated in each title matches the heatmap cell.}
+    \label{fig:paramsensitivityrows}
+\end{figure}
+
+\textbf{Column slice (Figure~\ref{fig:paramsensitivitycols}).} Fixing $k=12$, noise increases left to right from $\sigma=0.02$ to $\sigma=0.36$. This provides a visual explanation for why ARI degrades: the manifold that gives spectral clustering its advantage is progressively erased by noise, and the graph can no longer encode any low-density separation.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{final_pic/parameter_sensitivity_cols.png}
+    \caption{Representative column slice of the sensitivity map. Graph degree fixed at $k=12$; noise increases left to right. Each panel shows NJW cluster assignments with ARI annotated. The progressive erasure of the two-moon structure directly explains the heatmap's column-wise ARI decay.}
+    \label{fig:paramsensitivitycols}
 \end{figure}
 
 \subsection{Eigengap study}
@@ -514,23 +536,39 @@ A common heuristic for spectral clustering is that the first few eigenvalues of 
 \end{figure}
 
 \subsection{Graph construction ablation}
-The strongest additional lesson is that graph construction is the main inductive bias. We compare three affinity constructions:
+The strongest additional lesson is that graph construction is the primary inductive bias. We ablate three affinity matrix designs, each placing a different locality prior on the similarity structure.
+
+\paragraph{Dense RBF (Gaussian kernel).}
 \[
-W_{ij}^{\mathrm{dense}} = \exp(-\gamma \lVert x_i-x_j\rVert_2^2),
+W_{ij}^{\mathrm{dense}} = \exp\!\left(-\gamma \lVert x_i-x_j\rVert_2^2\right), \quad \gamma = \frac{1}{2\hat{\sigma}^2},
 \]
+where $\hat{\sigma}^2$ is estimated from the data (e.g.\ median pairwise squared distance). Every pair of points receives a positive edge weight; the resulting graph is fully connected and $W^{\mathrm{dense}}$ is dense. This kernel is parameter-efficient but loses directional locality information: points on the same manifold arm and points on different arms may receive similar weights if their Euclidean distances happen to be close.
+
+\paragraph{Union $k$-NN with RBF weights.}
 \[
-W_{ij}^{\mathrm{kNN}} = \mathbf{1}\{j\in \mathcal{N}_m(i) \text{ or } i\in \mathcal{N}_m(j)\} \exp(-\gamma \lVert x_i-x_j\rVert_2^2),
+W_{ij}^{\mathrm{kNN}} = \mathbf{1}\!\left\{j\in \mathcal{N}_m(i) \;\text{or}\; i\in \mathcal{N}_m(j)\right\} \cdot \exp\!\left(-\gamma \lVert x_i-x_j\rVert_2^2\right),
 \]
-and
+where $\mathcal{N}_m(i)$ is the directed set of the $m$ nearest neighbors of $i$. The union rule guarantees that $W^{\mathrm{kNN}}$ is symmetric and that each node has degree at least $m$, so the graph stays connected for reasonable $m$. The $k$-NN mask restricts attention to locally relevant pairs, preserving manifold topology.
+
+\paragraph{Mutual $k$-NN with RBF weights.}
 \[
-W_{ij}^{\mathrm{mutual}} = \mathbf{1}\{j\in \mathcal{N}_m(i) \text{ and } i\in \mathcal{N}_m(j)\} \exp(-\gamma \lVert x_i-x_j\rVert_2^2).
+W_{ij}^{\mathrm{mutual}} = \mathbf{1}\!\left\{j\in \mathcal{N}_m(i) \;\text{and}\; i\in \mathcal{N}_m(j)\right\} \cdot \exp\!\left(-\gamma \lVert x_i-x_j\rVert_2^2\right).
 \]
-Here $\mathcal{N}_m(i)$ denotes the directed $m$-nearest-neighbor set of point $i$. Figure~\ref{fig:graphablation} shows that the same spectral clustering pipeline can behave very differently depending on this choice. On moons and circles, local sparse graphs preserve manifold geometry and dense RBF does poorly. On the digit subset $\{0,1,3,6\}$, dense RBF performs well, while mutual-$k$-NN becomes too restrictive and loses useful edges. The conclusion is not that one graph is universally best; rather, graph construction must match the data geometry.
+Only mutual neighbors share an edge. This produces the sparsest graph; it can disconnect if $m$ is small or the data are irregularly sampled. The mutual constraint eliminates asymmetric neighbors that arise from density differences, making the graph more robust to cluster imbalance---but at the cost of connectivity.
+
+\medskip
+Let $D^{\mathrm{kNN}}$ be the degree matrix of $W^{\mathrm{kNN}}$. The normalized Laplacian used in NJW is
+\[
+L_{\mathrm{sym}} = I - (D^{\mathrm{kNN}})^{-1/2}\, W^{\mathrm{kNN}}\, (D^{\mathrm{kNN}})^{-1/2},
+\]
+and the same formula applies substituting the other affinity matrices. The key observation is that the spectral gap of $L_{\mathrm{sym}}$ depends sensitively on which $W$ is used: an overly dense $W$ inflates within-cluster edge weights until the Fiedler value loses contrast, while an overly sparse $W$ produces disconnected components and spurious zero eigenvalues.
+
+Figure~\ref{fig:graphablation} shows the ARI for each combination. On manifold datasets (moons, circles), the local sparse graphs ($k$-NN and mutual) strongly outperform dense RBF because they preserve the low-density separation between manifold arms. On the digit subset $\{0,1,3,6\}$, dense RBF performs well---the digit classes form roughly convex blobs in pixel space---while mutual-$k$-NN becomes too restrictive and loses connectivity across digit modes. The conclusion: graph construction must be matched to the geometry of the data.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.70\textwidth]{final_pic/graph_construction_ablation.png}
-    \caption{Graph construction ablation. The same spectral clustering pipeline can behave very differently depending on whether the graph is dense, local sparse, or mutual local.}
+    \caption{Graph construction ablation across three datasets. Dense RBF dominates on nearly convex digit clusters; local $k$-NN graphs dominate on non-convex manifolds. Mutual $k$-NN can become too sparse on high-dimensional digit data.}
     \label{fig:graphablation}
 \end{figure}
 

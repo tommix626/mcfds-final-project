@@ -363,7 +363,7 @@ Bridge stress & 0.552 & 0.532 & Thin bridge partially weakens the intended cut. 
 \end{tabular}
 \end{table}
 
-Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectral clustering does exactly what we expect on two moons and concentric circles. The high-dimensional moons and bridge examples are intentionally less clean: in particular, Figure~\ref{fig:failure2} is included to make the bridge failure explicit by comparing ground truth, $k$-means, and NJW side by side.
+Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectral clustering does exactly what we expect on two moons and concentric circles. The high-dimensional moons plus the two stress cases are intentionally less clean: Figures~\ref{fig:failure_overlap} and~\ref{fig:failure2} are included to make the overlapping and bridge failure modes explicit by comparing ground truth, $k$-means, and NJW side by side.
 
 \begin{figure}[H]
     \centering
@@ -387,6 +387,13 @@ Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectr
     \includegraphics[width=0.47\textwidth]{final_pic/high_dim_moons_kmeans.png}
     \caption{Moons embedded in higher dimension using additional noise coordinates, plotted here using the first two coordinates. Both methods degrade; spectral clustering retains a modest quantitative advantage but no longer cleanly recovers the moon structure in this view.}
     \label{fig:highdim}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{final_pic/overlapping_groundtruth_kmeans_njw.png}
+    \caption{Overlapping-blobs stress case in original 2D coordinates $(x,y)$, shown as ground truth (left), $k$-means (middle), and NJW spectral clustering (right). Because the classes overlap strongly in feature space, there is no clean boundary for either method; this figure illustrates ambiguity-driven failure rather than a parameter-tuning artifact.}
+    \label{fig:failure_overlap}
 \end{figure}
 
 \begin{figure}[H]

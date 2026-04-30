@@ -8,75 +8,283 @@
 \usepackage{multirow}
 \usepackage{array}
 \usepackage{enumitem}
+\geometry{margin=1.1in}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{bm}
+\usepackage{xcolor}
+\usepackage{parskip}
+\usepackage{microtype}
+\usepackage{mdframed}
+
+\geometry{margin=1.1in}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    citecolor=blue!60!black,
+    urlcolor=blue!60!black
+}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{lemma}{Lemma}[section]
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{remark}{Remark}[section]
+
+\newmdenv[
+  backgroundcolor=gray!8,
+  linecolor=gray!40,
+  linewidth=0.8pt,
+  innerleftmargin=10pt,
+  innerrightmargin=10pt,
+  innertopmargin=8pt,
+  innerbottommargin=8pt,
+  skipabove=8pt,
+  skipbelow=8pt
+]{keybox}
+
 \title{Spectral Clustering: Theory, Algorithm, and Experiments}
 \author{Python implementation and report scaffold for the course final project}
 \date{}
 
+
 \begin{document}
 \maketitle
 
-\section{Introduction}
-Spectral clustering is a graph-based clustering method that is especially attractive when cluster geometry is non-convex, curved, or better described by local neighborhood relations than by Euclidean centroids. The basic move is to convert data into a weighted graph, study th
+\section{Introduction and Motivation}
+% =============================================================
+
+Spectral clustering partitions data by exploiting the eigenstructure of a matrix derived from pairwise similarities. This report will focus on the clustering method contributed by Ng, Jordan, and Weiss(hereafter \textbf{NJW}).
+
+\noindent 
+The benefits of NJW clustering is threefold. First, they propose a clean, specific algorithm for $k$-way clustering that uses $k$ eigenvectors simultaneously rather than applying a two-way cut recursively. Second, they provide an analysis---using matrix perturbation theory---that gives precise conditions under which the algorithm is guaranteed to succeed. Third, they demonstrate that a seemingly small implementation detail---row-normalizing the eigenvector matrix before applying $k$-means---is in fact critical and has a deep geometric justification.
+
+The NJW algorithm is closely related to the Normalized Cut (Ncut) of Shi and Malik~\cite{ShiMalik2000}, but differs in the Laplacian it employs. Whereas Shi and Malik work with the asymmetric random walk Laplacian $L_{\mathrm{rw}} = D^{-1}(D-W)$, NJW use the \textbf{symmetric normalized Laplacian} $L_{\mathrm{sym}} = D^{-1/2}(D - W)D^{-1/2}$. This difference has both numerical and theoretical consequences that we explore throughout this document.
+
+% =============================================================
+\section{Setup: The Affinity Graph}
+% =============================================================
+
+\subsection{Data and Affinity Matrix}
+
+Let $S = \{s_1, s_2, \ldots, s_n\} \subset \mathbb{R}^l$ be the dataset. NJW represent pairwise relationships through an \textbf{affinity matrix} $A \in \mathbb{R}^{n \times n}$ defined by:
+\begin{equation}
+    A_{ij} =
+    \begin{cases}
+        \exp\!\left(-\dfrac{\|s_i - s_j\|^2}{2\sigma^2}\right) & \text{if } i \neq j, \\[6pt]
+        0 & \text{if } i = j,
+    \end{cases}
+    \label{eq:affinity}
+\end{equation}
+where $\sigma^2 > 0$ is a scale parameter that controls how quickly affinity decays with distance. NJW set self-affinities $A_{ii} = 0$ to prevent a vertex from dominating its own degree.
+
+The matrix $A$ is symmetric and nonnegative. It plays the role of $W$ in the graph Laplacian literature. The parameter $\sigma^2$ is the primary hyperparameter of the method: a large $\sigma^2$ makes all pairs nearly equally similar, collapsing all cluster structure; a small $\sigma^2$ makes the graph sparse and sensitive to scale. NJW later show that $\sigma^2$ can be chosen automatically by searching for the value that produces the tightest clusters in the spectral embedding (see Section~\ref{sec:sigma}).
+
+\subsection{Degree Matrix and Symmetric Normalized Laplacian}
+
+Define the diagonal degree matrix $D$ with entries $D_{ii} = \sum_j A_{ij}$ (total affinity of vertex $i$ to all other vertices). NJW then construct the matrix:
+\begin{equation}
+    L = D^{-1/2} A D^{-1/2},
+    \label{eq:L_njw}
+\end{equation}
+which is the \textbf{symmetric normalized affinity matrix}. Note that NJW define $L$ as the normalized affinity (not the Laplacian $I - L$), so in their notation the relevant eigenvectors are the \emph{largest} ones of $L$, corresponding to the \emph{smallest} eigenvalues of $L_{\mathrm{sym}} = I - L = D^{-1/2}(D - A)D^{-1/2}$.
 
 
-e graph Laplacian, extract a small number of eigenvectors, and run a simple clustering method in that spectral embedding. We focus on the normalized spectral clustering algorithm of Ng, Jordan, and Weiss (NJW) \cite{ng2001spectral}, while relating it to the normalized-cut objective of Shi and Malik \cite{shi2000normalized} and the broader graph-Laplacian view in von Luxburg's tutorial \cite{vonluxburg2007tutorial}.
+The matrix $L = D^{-1/2}AD^{-1/2}$ is symmetric and positive semidefinite. Its eigenvalues $1 = \lambda_1 \geq \lambda_2 \geq \cdots \geq \lambda_n \geq -1$ are real by the Perron-Frobenius Theorem.
 
-The project brief asks for three components: a theory summary, an algorithmic description including computational cost, and a data exploration section with synthetic and real datasets, comparisons with $k$-means, and noise robustness. This report follows that structure closely.
+\subsection{Relationship to the Random Walk Laplacian}
 
-\section{Theory}
-\subsection{Graph construction and Laplacians}
-Given data points $x_1,\dots,x_n \in \mathbb{R}^d$, we build a weighted undirected graph with affinity matrix $W \in \mathbb{R}^{n\times n}$, where $W_{ij}$ is large when $x_i$ and $x_j$ are similar. Let $D$ be the diagonal degree matrix, $D_{ii} = \sum_j W_{ij}$. The two most common Laplacians are the unnormalized Laplacian
-\[
-L = D - W
-\]
-and the symmetric normalized Laplacian
-\[
-L_{\mathrm{sym}} = I - D^{-1/2} W D^{-1/2}.
-\]
-When the graph has $k$ connected components, $L_{\mathrm{sym}}$ has exactly $k$ zero eigenvalues, and the associated eigenvectors are piecewise constant on those components. In the nearly-disconnected case, the bottom $k$ eigenvectors remain approximately piecewise constant, which is the spectral signal exploited by clustering algorithms \cite{vonluxburg2007tutorial}.
+There is a close algebraic relationship between NJW's $L$ and the transition matrix $P = D^{-1}A$ of the natural random walk on the affinity graph, which we encountered during lectures. Specifically:
+\begin{equation}
+    L = D^{-1/2} A D^{-1/2} = D^{1/2} P D^{-1/2}.
+\end{equation}
+This is a similarity transformation: $L$ and $P$ have the same eigenvalues. If $\mathbf{v}$ is an eigenvector of $L$ with eigenvalue $\lambda$, then $\mathbf{u} = D^{-1/2}\mathbf{v}$ is an eigenvector of $P$ with the same eigenvalue $\lambda$. The NJW approach therefore encodes the same spectral information as the random walk, but in a symmetric form that is easier to work with analytically and numerically.
 
-\subsection{From normalized cut to an eigenproblem}
-For a two-way partition $(A, \bar A)$, the cut is
-\[
-\mathrm{cut}(A,\bar A) = \sum_{i\in A,\,j\in \bar A} W_{ij}.
-\]
-Minimizing cut alone is degenerate: it prefers isolating tiny sets. Shi and Malik proposed the normalized cut objective
-\[
-\mathrm{Ncut}(A,\bar A)
-=
-\frac{\mathrm{cut}(A,\bar A)}{\mathrm{vol}(A)}
-+
-\frac{\mathrm{cut}(A,\bar A)}{\mathrm{vol}(\bar A)},
-\qquad
-\mathrm{vol}(A)=\sum_{i\in A} D_{ii},
-\]
-which balances low inter-cluster connectivity against cluster size \cite{shi2000normalized}. The exact optimization is discrete and NP-hard in general, so spectral clustering uses a continuous relaxation. That relaxation leads to a generalized eigenvalue problem and, after normalization, to the bottom eigenvectors of a Laplacian matrix. This is the main mathematical reason spectral clustering works: difficult discrete partitioning is replaced by a tractable linear algebra problem \cite{shi2000normalized,vonluxburg2007tutorial}.
+% =============================================================
+\section{The NJW Algorithm}
+% =============================================================
 
-\subsection{Why NJW?}
-There are several common ``flavors'' of spectral clustering. Unnormalized methods work directly with $L=D-W$. Shi--Malik normalized cuts solve a generalized eigenproblem. NJW instead computes the top eigenvectors of a normalized affinity-like matrix, or equivalently the bottom eigenvectors of a normalized Laplacian, then normalizes rows and applies $k$-means \cite{ng2001spectral}. We chose NJW because it is simple, standard, easy to implement in Python, and closely tied to the normalized-cut relaxation while remaining computationally clean.
+\subsection{The Six Steps}
 
-\section{Algorithm}
-\subsection{Implemented method}
-Our implementation uses an $m$-nearest-neighbor graph with RBF weights:
-\[
-W_{ij} = \exp\!\bigl(-\gamma \lVert x_i-x_j\rVert_2^2\bigr)
-\]
-when $x_j$ is among the $m$ nearest neighbors of $x_i$. The scale parameter $\gamma$ is chosen from the median nonzero neighbor distance. The graph is then symmetrized.
+NJW propose the following algorithm for clustering $S$ into $k$ groups.
 
-\paragraph{Input.} Data matrix $X\in\mathbb{R}^{n\times d}$, number of clusters $k$, number of neighbors $m$.
+\begin{enumerate}[label=\textbf{Step \arabic*.}, leftmargin=*, itemsep=8pt]
+    \item \textbf{Build the affinity matrix.}\\
+    Form $A \in \mathbb{R}^{n \times n}$ with $A_{ij} = \exp(-\|s_i - s_j\|^2 / 2\sigma^2)$ for $i \neq j$ and $A_{ii} = 0$.
 
-\paragraph{Output.} Predicted cluster labels $\hat y_1,\dots,\hat y_n$.
+    \item \textbf{Construct the normalized matrix $L$.}\\
+    Compute $D = \mathrm{diag}(\sum_j A_{1j}, \ldots, \sum_j A_{nj})$ and form:
+    \[
+        L = D^{-1/2} A D^{-1/2}.
+    \]
 
-\paragraph{Steps.}
-\begin{enumerate}[leftmargin=1.4em]
-    \item Build a sparse weighted $m$-nearest-neighbor graph.
-    \item Form $L_{\mathrm{sym}} = I-D^{-1/2}WD^{-1/2}$.
-    \item Compute the $k$ eigenvectors associated with the smallest eigenvalues of $L_{\mathrm{sym}}$.
-    \item Stack them into $U\in\mathbb{R}^{n\times k}$ and row-normalize to obtain $Y$.
-    \item Run $k$-means on the rows of $Y$.
+    \item \textbf{Find the $k$ leading eigenvectors of $L$.}\\
+    Compute $x_1, x_2, \ldots, x_k$, the eigenvectors corresponding to the $k$ largest eigenvalues of $L$ (chosen to be orthogonal in the case of repeated eigenvalues). Form the matrix $X = [x_1 \mid x_2 \mid \cdots \mid x_k] \in \mathbb{R}^{n \times k}$ with the eigenvectors as columns.
+
+    \item \textbf{Row-normalize $X$ to form $Y$.}\\
+    Construct the matrix $Y \in \mathbb{R}^{n \times k}$ by normalizing each row of $X$ to unit Euclidean length:
+    \begin{equation}
+        Y_{ij} = \frac{X_{ij}}{\left(\sum_{j'} X_{ij'}^2\right)^{1/2}}.
+        \label{eq:rownorm}
+    \end{equation}
+
+    \item \textbf{Cluster the rows of $Y$ with $k$-means.}\\
+    Treat each row $y_i \in \mathbb{R}^k$ of $Y$ as a data point and apply $k$-means (or any algorithm minimizing distortion) to obtain $k$ cluster assignments.
+
+    \item \textbf{Transfer assignments back.}\\
+    Assign the original point $s_i$ to cluster $j$ if and only if row $i$ of $Y$ was assigned to cluster $j$ in Step 5.
 \end{enumerate}
 
-\subsection{Computational cost}
+\subsection{The Role of Each Step}
+
+It is worth pausing to understand intuitively what each step accomplishes.
+
+\paragraph{Step 2 (normalization to form $L$).}
+The raw affinity matrix $A$ gives high total weight to vertices with many neighbors (high-degree nodes). Without normalization, the eigenvectors of $A$ would be dominated by degree effects rather than cluster structure. 
+
+\paragraph{Step 3 (eigenvectors).}
+The $k$ leading eigenvectors of $L$ span a subspace that is nearly invariant under the random walk dynamics. In the ideal case of perfectly separated clusters, this subspace has a precise block structure (Section~\ref{sec:ideal}). Taking $k$ eigenvectors simultaneously is critical: using fewer eigenvectors discards cluster information; using more mixes in irrelevant dimensions that disrupt the subsequent $k$-means step.
+
+\paragraph{Step 4 (row normalization).}
+This step is the key innovation of NJW over earlier methods. The delicacy of this move will be explained in the ideal case of well-separated clusters.
+
+\paragraph{Step 5 ($k$-means).}
+$k$-means in $\mathbb{R}^k$ is fast and simple. Because $k \ll n$, this step is computationally cheap. NJW note that initializing the $k$ centroids at approximately $90^\circ$ to each other (exploiting the near-orthogonality of the cluster centroids in $Y$) improves convergence significantly, often requiring only a single pass of $k$-means.
+
+% =============================================================
+\section{Analysis: Why the Algorithm Works}
+% =============================================================
+
+The theoretical core of NJW is a two-part argument: an ``ideal case'' analysis showing the algorithm is \emph{exact} when clusters are perfectly separated, followed by a perturbation argument showing it remains approximately correct when clusters are nearly separated.
+
+\subsection{The Ideal Case: Disconnected Components}
+In the ideal case, the data points form $k$ clusters such that the similarity between points in different clusters is exactly zero ($A_{ij} = 0$ if $s_i, s_j$ are in different clusters). Say there are $k$ clusters of sizes $n_1, n_2,\dots n_k$.
+
+\subsubsection{Block Diagonal Structure}
+By reordering the indices, the affinity matrix $A$ (and consequently $L$) becomes block diagonal:
+\[ L = \begin{bmatrix} L_1 & 0 & \dots & 0 \\ 0 & L_2 & \dots & 0 \\ \vdots & \vdots & \ddots & \vdots \\ 0 & 0 & \dots & L_k \end{bmatrix} \]
+where each $L_i$ corresponds to a single cluster $C_i$.
+
+\subsubsection{Eigenvectors as Indicators}
+Because $L$ is block diagonal, its eigenvectors are block-structured. Since each $L_i$ is the normalized affinity of a connected subgraph with positive entries, the Perron--Frobenius theorem guarantees that $L_i$ has a unique principal eigenvector $z_i \in \mathbb{R}^{n_i}$ with positive entries and eigenvalue 1. All other eigenvalues of $L_i$ are strictly less than 1. The matrix $\hat{L}$ therefore has eigenvalue 1 with multiplicity $k = 3$, and the corresponding eigenvectors are:
+\[ v_1 = [z_1, 0, \dots, 0]^T, \quad v_2 = [0, z_2, \dots, 0]^T, \dots, \quad v_k = [0, 0, \dots, z_k]^T \]
+where the $z_i$'s could look like(We dont know)
+\[z_i = [0.5, 0.5, 0.5, \dots]^T\] or \[z_i  = [1.234, 1.234, 1.234, \dots]^T\]
+The matrix $X$ then looks like:
+\[ X = \begin{bmatrix} z_1 & 0 & \dots & 0 \\ 0 & z_2 & \dots & 0 \\ \vdots & \vdots & \ddots & \vdots \\ 0 & 0 & \dots & z_k \end{bmatrix} \]
+(Each column is the block eigenvector of one cluster, padded with zeros for the other clusters.)
+
+However, since 1 is a \emph{repeated} eigenvalue of $L$, the eigenvector basis is not unique. Any orthogonal rotation $\hat{X} R$ with $R^\top R = I$ is also a valid eigenvector matrix. This ambiguity is important: we \emph{cannot} interpret individual eigenvectors (columns of $X$) as cluster indicators in general. The stable object is the \emph{subspace} spanned by the columns, not any specific choice of basis.
+
+Therefore NJW apply row normalization (Step 4). After normalizing to unit length, every row corresponding to cluster $i$ becomes the unit vector $e_i^\top$(or, if $\hat{X}$ was replaced by $\hat{X}R$, every such row becomes $e_i^\top R$). This gives:
+\begin{equation}
+    \hat{Y} = \begin{bmatrix} \hat{Y}^{(1)} \\ \hat{Y}^{(2)} \\ \hat{Y}^{(3)} \end{bmatrix}
+    = \begin{bmatrix} \mathbf{1} & \mathbf{0} & \mathbf{0} \\ \mathbf{0} & \mathbf{1} & \mathbf{0} \\ \mathbf{0} & \mathbf{0} & \mathbf{1} \end{bmatrix} R,
+    \label{eq:Y_ideal}
+\end{equation}
+where each block $\hat{Y}^{(i)} \in \mathbb{R}^{n_i \times k}$ has all rows equal to $e_i^\top R$---a single fixed row vector.
+
+In other words: after row normalization, all points from the same cluster are mapped to \emph{exactly the same point} on the unit $(k-1)$-sphere in $\mathbb{R}^k$, and these $k$ points are mutually orthogonal (at $90^\circ$ from each other). $k$-means on $\hat{Y}$ then trivially recovers the true clustering.
+
+The key insight is that row normalization removes the dependence on the arbitrary rotation $R$. Any $R$ leads to the same \emph{geometric} configuration of the rows of $\hat{Y}$: $k$ mutually orthogonal points. The specific rotation does not matter for $k$-means.
+
+\subsection{The General (Perturbed) Case}
+
+In practice, $A$ has nonzero off-diagonal blocks: there are small positive affinities between points in different clusters. Write $A = \hat{A} + E$ where $\hat{A}$ is the ideal block-diagonal matrix and $E$ captures the inter-cluster affinities. Correspondingly, $L = \hat{L} + \tilde{E}$ for some perturbation $\tilde{E}$ (derived from $E$ after the $D^{-1/2}$ normalization).
+
+The central question is: when the perturbation $E$ is small, how close are the rows of $Y$ (from the perturbed $L$) to those of $\hat{Y}$ (from the ideal $\hat{L}$)?
+
+\paragraph{Stability via the eigengap.} Matrix perturbation theory (Davis--Kahan theorem) gives bounds on how much the eigenvector subspace changes under perturbation. Specifically, the subspace spanned by the $k$ leading eigenvectors of $L$ is close to that of $\hat{L}$ if and only if the \textbf{eigengap} $\delta = |\lambda_k - \lambda_{k+1}|$ is large---i.e., the $k$-th and $(k+1)$-th eigenvalues of $\hat{L}$ are well-separated.
+
+From the block structure of $\hat{L}$, the $k$ largest eigenvalues of $\hat{L}$ are all equal to 1 (one per cluster), and $\lambda_{k+1} = \max_i \lambda_2^{(i)}$, the largest second eigenvalue across all intra-cluster blocks. Therefore, the eigengap is:
+\begin{equation}
+    \delta = |1 - \max_i \lambda_2^{(i)}|.
+\end{equation}
+A large eigengap means $\lambda_2^{(i)}$ is small for all $i$---which is exactly the condition that the random walk within each cluster mixes rapidly. NJW formalize this as:
+
+\begin{keybox}
+\textbf{Assumption A1 (Intra-cluster cohesiveness):} There exists $\delta > 0$ such that $\lambda_2^{(i)} \leq 1 - \delta$ for all $i = 1, \ldots, k$.
+\end{keybox}
+
+The second eigenvalue $\lambda_2^{(i)}$ is related to the \emph{Cheeger constant} $h(S_i)$ of cluster $i$, defined as:
+\begin{equation}
+    h(S_i) = \min_{\mathcal{I} \subseteq \{1,\ldots,n_i\}} \frac{\sum_{j \in \mathcal{I},\, k \notin \mathcal{I}} A_{jk}^{(ii)}}{\min\left\{\sum_{j \in \mathcal{I}} d_j^{(i)},\, \sum_{k \notin \mathcal{I}} d_k^{(i)}\right\}}.
+    \label{eq:cheeger}
+\end{equation}
+This is the minimum normalized cut within cluster $i$ (the hardest bisection of $S_i$ itself). A large Cheeger constant means $S_i$ is hard to split---it is a genuinely tight cluster. Spectral graph theory gives:
+\begin{equation}
+    \frac{(h(S_i))^2}{2} \leq 1 - \lambda_2^{(i)} \leq 2h(S_i),
+\end{equation}
+so Assumption A1 holds if and only if all clusters have large Cheeger constants (i.e., none of them is itself nearly bisectable).
+
+\paragraph{Inter-cluster separation conditions.}
+Beyond intra-cluster cohesiveness, NJW require two conditions controlling the inter-cluster affinities.
+
+\begin{keybox}
+\textbf{Assumption A2 (Small inter-cluster total affinity):} There exists $\epsilon_1 > 0$ such that for all pairs of distinct clusters $i_1 \neq i_2$:
+\begin{equation}
+    \sum_{j \in S_{i_1}} \sum_{k \in S_{i_2}} \frac{A_{jk}^2}{d_j d_k} \leq \epsilon_1.
+    \label{eq:A2}
+\end{equation}
+\end{keybox}
+
+\begin{keybox}
+\textbf{Assumption A3 (Points more connected internally than externally):} There exists $\epsilon_2 > 0$ such that for every cluster $i$ and every point $j \in S_i$:
+\begin{equation}
+    \frac{\sum_{k:\, k \notin S_i} A_{jk}}{d_j} \leq \epsilon_2 \left(\sum_{k,\, l \in S_i} \frac{A_{kl}^2}{d_k d_l}\right)^{-1/2}.
+    \label{eq:A3}
+\end{equation}
+\end{keybox}
+
+Assumption A2 says the total normalized inter-cluster affinity is small. Assumption A3 says each point is more strongly connected to its own cluster than to other clusters. Both are natural conditions for well-separated clusters: for clusters of size $O(n)$ with Gaussian affinities decaying with distance, these conditions hold as long as the inter-cluster distances are large relative to $\sigma$.
+
+\begin{keybox}
+\textbf{Assumption A4 (No isolated vertices):} There exists $C > 0$ such that for all $i$, $j \in \{1,\ldots,n_i\}$:
+\begin{equation}
+    d_j^{(i)} \geq \frac{\sum_{k=1}^{n_i} d_k^{(i)}}{C n_i}.
+    \label{eq:A4}
+\end{equation}
+\end{keybox}
+
+This benign condition requires that no vertex within a cluster is excessively weakly connected compared to the cluster average. It prevents degenerate cases where a near-isolated vertex within a cluster distorts the eigenvectors.
+
+\paragraph{The main theorem.}
+
+\begin{theorem}[NJW Theorem 2]
+Let Assumptions A1, A2, A3, and A4 hold. Define $\epsilon = \sqrt{k(k-1)\epsilon_1 + k\epsilon_2^2}$. If $\delta > (2 + \sqrt{2})\epsilon$, then there exist $k$ mutually orthogonal unit vectors $r_1, \ldots, r_k$ such that the rows of $Y$ satisfy:
+\begin{equation}
+    \frac{1}{n} \sum_{i=1}^{k} \sum_{j=1}^{n_i} \|y_j^{(i)} - r_i\|_2^2
+    \leq 4C\left(4 + 2\sqrt{k}\right)^2 \frac{\epsilon^2}{(\delta - \sqrt{2}\epsilon)^2}.
+    \label{eq:thm2}
+\end{equation}
+\end{theorem}
+
+This theorem says: when the eigengap $\delta$ is large relative to the inter-cluster perturbation $\epsilon$, the rows of $Y$ form tight clusters around $k$ mutually orthogonal points on the unit sphere. The bound \eqref{eq:thm2} quantifies precisely how tight these clusters are. As $\epsilon \to 0$ (clusters become perfectly separated), the right-hand side $\to 0$ and the rows converge to the ideal configuration of Proposition 1.
+
+The condition $\delta > (2 + \sqrt{2})\epsilon$ makes explicit the trade-off: a larger eigengap $\delta$ (more cohesive clusters, better separated) allows the algorithm to tolerate larger perturbations $\epsilon$ (more inter-cluster affinity) while still producing useful clusterings.
+
+% =============================================================
+\section{Choosing $\sigma^2$ Automatically}
+\label{sec:sigma}
+% =============================================================
+
+The parameter $\sigma^2$ controls the scale of the Gaussian affinity. Theorem 2 gives an implicit prescription: choose $\sigma^2$ to maximize the eigengap $\delta$, since a larger $\delta$ gives a tighter guarantee.
+
+NJW propose a practical surrogate. For the correct $\sigma^2$, Theorem 2 predicts that the rows of $Y$ form $k$ tight clusters on the unit sphere. The distortion of the $k$-means solution (the total within-cluster variance in $\mathbb{R}^k$) is therefore small. NJW simply search over a grid of $\sigma^2$ values, run the full algorithm for each, and select the $\sigma^2$ that minimizes the $k$-means distortion:
+\begin{equation}
+    \sigma^{*2} = \arg\min_{\sigma^2}\; \text{(k-means distortion of } Y\text{'s rows)}.
+    \label{eq:sigma_search}
+\end{equation}
+This requires running the algorithm multiple times, but the search is inexpensive because $k$-means in $\mathbb{R}^k$ is fast for small $k$.
+
+
+
+\section{Computational cost}
 There are three main costs.
 \begin{enumerate}[leftmargin=1.4em]
     \item \textbf{Graph construction.} Exact pairwise distances would cost $O(n^2d)$, but our implementation uses a sparse $k$-NN graph so the stored graph has only $O(mn)$ nonzeros.

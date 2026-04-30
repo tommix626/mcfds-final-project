@@ -342,7 +342,7 @@ We used the following groups of experiments.
 For graph datasets, plain feature-space $k$-means is not naturally defined. To keep the comparison explicit, we used a weak but transparent baseline: $k$-means on adjacency rows. This is not a state-of-the-art graph clustering baseline, but it provides a concrete comparator.
 
 \section{Results: synthetic data}
-Table~\ref{tab:synthetic} summarizes the main synthetic experiments. The expected pattern is visible on the clean low-dimensional examples: spectral clustering strongly beats $k$-means on non-convex geometry (two moons, circles), and ties or nearly ties on well-separated blobs. The stress cases are more nuanced. On high-dimensional moons, spectral clustering has a modest quantitative advantage, but the 2D projection in Figure~\ref{fig:highdim} makes clear that neither method cleanly recovers the original moon structure after many noisy coordinates are added. On the bridge-connected dataset, the method is better described as partially degraded rather than catastrophically failed: it separates the two main masses reasonably, but the thin bridge lowers the ARI and weakens the graph-cut interpretation.
+Table~\ref{tab:synthetic} summarizes the main synthetic experiments. The expected pattern is visible on the clean low-dimensional examples: spectral clustering strongly beats $k$-means on non-convex geometry (two moons, circles), and ties or nearly ties on well-separated blobs. The stress cases are more nuanced. On high-dimensional moons, spectral clustering has a modest quantitative advantage, but the 2D projection in Figure~\ref{fig:highdim} makes clear that neither method cleanly recovers the original moon structure after many noisy coordinates are added. On the bridge-connected dataset, Figure~\ref{fig:failure2} illustrates the failure mode we care about: both methods struggle around the thin connector, and NJW no longer yields a clean low-density cut that matches the reference labels.
 
 \begin{table}[H]
 \centering
@@ -363,7 +363,7 @@ Bridge stress & 0.552 & 0.532 & Thin bridge partially weakens the intended cut. 
 \end{tabular}
 \end{table}
 
-Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectral clustering does exactly what we expect on two moons and concentric circles. The high-dimensional moons and bridge examples are intentionally less clean: the metrics show only partial advantages, and the plots should be read as stress tests rather than visual proofs of successful recovery.
+Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectral clustering does exactly what we expect on two moons and concentric circles. The high-dimensional moons and bridge examples are intentionally less clean: in particular, Figure~\ref{fig:failure2} is included to make the bridge failure explicit by comparing ground truth, $k$-means, and NJW side by side.
 
 \begin{figure}[H]
     \centering
@@ -391,13 +391,12 @@ Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectr
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.47\textwidth]{final_pic/overlapping_blobs_failure_spectral.png}
-    \includegraphics[width=0.47\textwidth]{final_pic/bridge_failure_spectral.png}
-    \caption{Two stress cases in original 2D coordinates $(x,y)$: overlapping blobs (left) and a bridge-connected dataset (right). In the bridge example, spectral clustering still separates the main masses, but the thin connection weakens the intended cut and reduces ARI.}
+    \includegraphics[width=0.85\textwidth]{final_pic/bridge_groundtruth_kmeans_njw.png}
+    \caption{Bridge-connected stress case in original 2D coordinates $(x,y)$, shown as ground truth (left), $k$-means (middle), and NJW spectral clustering (right). The thin bridge creates ambiguous assignments near the connection; this is the failure mode discussed in the text, where neither method cleanly matches the reference partition.}
     \label{fig:failure2}
 \end{figure}
 
-The bridge-connected example is also a useful reminder that a visually plausible 2D partition need not yield a high pairwise clustering score. In this dataset the two large endpoint masses are separated reasonably well, but the bridge region creates many ambiguous assignments near the connection. Because ARI evaluates agreement at the level of point pairs rather than only the gross shape of the partition, errors on a relatively small set of bridge points can induce a much larger number of pairwise disagreements. The scatter plot should therefore be read as evidence of partial geometric recovery rather than near-perfect agreement with the reference labels.
+The bridge-connected example is also a useful reminder that a visually plausible 2D partition need not yield a high pairwise clustering score. Comparing the three panels in Figure~\ref{fig:failure2}, the two endpoint masses look separable at a glance, but the bridge region generates many ambiguous labels for both algorithms. Because ARI evaluates agreement at the level of point pairs rather than only the gross shape of the partition, errors on a relatively small set of bridge points can induce a much larger number of pairwise disagreements. This is exactly the kind of failure we mean in this report: not random labeling everywhere, but a structurally important mismatch between the graph-induced cut and the intended classes.
 
 \section{Results: real data and digit subsets}
 We study four digit subsets of increasing difficulty: $\{0,1\}$, $\{1,7\}$, $\{0,1,3,6\}$, and all digits. This progression makes it possible to distinguish regimes where local graph structure is helpful from regimes where raw pixel-space geometry already favors centroid-based clustering. Table~\ref{tab:digits} reports those results. The outcome is deliberately presented as a mixed result rather than a blanket win for spectral clustering. Spectral clustering is excellent on $\{0,1\}$ and strong on all ten digits, but it is slightly worse than $k$-means on $\{1,7\}$ and clearly worse on $\{0,1,3,6\}$ for the particular $k$-NN graph used here. Our hypothesis is that raw pixel-space Euclidean distances already separate some digit subsets nearly linearly, while the local graph can become brittle when classes have different stroke styles and densities.

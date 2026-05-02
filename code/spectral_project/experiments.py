@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import warnings
 from pathlib import Path
 from time import perf_counter
+
+os.environ.setdefault("LOKY_MAX_CPU_COUNT", "8")
 
 import networkx as nx
 import numpy as np
@@ -17,6 +20,7 @@ warnings.filterwarnings("ignore", message="Could not find the number of physical
 from .clustering import (
     dense_rbf_affinity,
     dense_rbf_affinity_sigma,
+    embedding_distortion,
     first_laplacian_eigenvalues,
     gamma_from_sigma,
     kmeans_baseline,
@@ -119,7 +123,11 @@ def run_success_and_failure(random_state: int = 0) -> pd.DataFrame:
                     "spectral",
                     y,
                     spec.labels,
-                    {**spec.timings, **{f"mem_{kk}": vv for kk, vv in spec.memory_bytes.items()}},
+                    {
+                        **spec.timings,
+                        **{f"param_{kk}": vv for kk, vv in spec.parameters.items()},
+                        **{f"mem_{kk}": vv for kk, vv in spec.memory_bytes.items()},
+                    },
                 )
             )
             rows.append(
@@ -147,7 +155,7 @@ def run_real_data(random_state: int = 0) -> pd.DataFrame:
     X_iris, y_iris = load_iris_data()
     spec_iris = ng_jordan_weiss(X_iris, n_clusters=3, n_neighbors=12, random_state=random_state)
     km_iris = kmeans_baseline(X_iris, n_clusters=3, random_state=random_state)
-    rows.append(_record_rows("iris", "real", "Spectral should be competitive; gains may be modest on nearly convex classes.", "spectral", y_iris, spec_iris.labels, spec_iris.timings))
+    rows.append(_record_rows("iris", "real", "Spectral should be competitive; gains may be modest on nearly convex classes.", "spectral", y_iris, spec_iris.labels, {**spec_iris.timings, **{f"param_{kk}": vv for kk, vv in spec_iris.parameters.items()}}))
     rows.append(_record_rows("iris", "real", "Spectral should be competitive; gains may be modest on nearly convex classes.", "kmeans", y_iris, km_iris.labels, km_iris.timings))
 
     X2, y2 = digits_pca_2d(classes=(0, 1, 3, 6), random_state=random_state)
@@ -165,7 +173,7 @@ def run_real_data(random_state: int = 0) -> pd.DataFrame:
         spec = ng_jordan_weiss(Xd, n_clusters=k, n_neighbors=neighbors, random_state=random_state)
         km = kmeans_baseline(Xd, n_clusters=k, random_state=random_state)
         expectation = "Digits form semantically meaningful but imperfect clusters; graph construction matters strongly here."
-        rows.append(_record_rows(name, "digits", expectation, "spectral", yd, spec.labels, spec.timings))
+        rows.append(_record_rows(name, "digits", expectation, "spectral", yd, spec.labels, {**spec.timings, **{f"param_{kk}": vv for kk, vv in spec.parameters.items()}}))
         rows.append(_record_rows(name, "digits", expectation, "kmeans", yd, km.labels, km.timings))
 
     Gk, yk = karate_graph()
@@ -542,6 +550,7 @@ def run_failure_comparison_figures(random_state: int = 0) -> None:
 
 SIGMA_ALPHAS = [0.10, 0.20, 0.35, 0.50, 0.70, 1.00, 1.40, 2.00, 3.00, 5.00]
 SPARSIFICATION_NEIGHBORS = [2, 3, 4, 6, 8, 10, 12, 16, 24, 32, 48]
+SPARSIFICATION_REPEATS = 5
 
 
 def _affinity_bytes(W) -> int:
@@ -552,14 +561,7 @@ def _affinity_bytes(W) -> int:
 
 
 def _embedding_distortion(Y: np.ndarray, labels: np.ndarray) -> float:
-    total = 0.0
-    for lab in np.unique(labels):
-        pts = Y[labels == lab]
-        if len(pts) == 0:
-            continue
-        center = pts.mean(axis=0, keepdims=True)
-        total += float(np.sum((pts - center) ** 2))
-    return total
+    return embedding_distortion(Y, labels)
 
 
 def _diagnostic_specs(random_state: int = 0):
@@ -889,50 +891,78 @@ def run_sparsification_tradeoff(random_state: int = 0) -> pd.DataFrame:
         if dataset not in {"digits_0136", "digits_all", "two_moons", "circles", "blobs"}:
             continue
         dense_sigma = 0.70 * median_pairwise_distance(X)
-        t0 = perf_counter()
-        W_dense = dense_rbf_affinity_sigma(X, sigma=dense_sigma)
-        dense_graph_seconds = perf_counter() - t0
-        rows.append(_run_affinity_configuration(
-            W_dense,
-            y,
-            k,
-            random_state,
-            dense_graph_seconds,
-            {
-                "dataset": dataset,
-                "family": family,
-                "graph": "dense_rbf_reference",
-                "n_neighbors": np.nan,
-                "alpha": 0.70,
-                "sigma": dense_sigma,
-                "gamma": gamma_from_sigma(dense_sigma),
-            },
-        ))
+        for repeat in range(SPARSIFICATION_REPEATS):
+            t0 = perf_counter()
+            W_dense = dense_rbf_affinity_sigma(X, sigma=dense_sigma)
+            dense_graph_seconds = perf_counter() - t0
+            rows.append(_run_affinity_configuration(
+                W_dense,
+                y,
+                k,
+                random_state + repeat,
+                dense_graph_seconds,
+                {
+                    "dataset": dataset,
+                    "family": family,
+                    "graph": "dense_rbf_reference",
+                    "n_neighbors": np.nan,
+                    "repeat": repeat,
+                    "alpha": 0.70,
+                    "sigma": dense_sigma,
+                    "gamma": gamma_from_sigma(dense_sigma),
+                },
+            ))
         for nn in SPARSIFICATION_NEIGHBORS:
             if nn >= X.shape[0]:
                 continue
             base = median_knn_distance(X, n_neighbors=nn)
             sigma = 0.70 * base
-            t0 = perf_counter()
-            W = knn_rbf_affinity_sigma_sparse(X, n_neighbors=nn, sigma=sigma)
-            graph_seconds = perf_counter() - t0
-            rows.append(_run_affinity_configuration(
-                W,
-                y,
-                k,
-                random_state,
-                graph_seconds,
-                {
-                    "dataset": dataset,
-                    "family": family,
-                    "graph": "knn_rbf",
-                    "n_neighbors": nn,
-                    "alpha": 0.70,
-                    "sigma": sigma,
-                    "gamma": gamma_from_sigma(sigma),
-                },
-            ))
-    df = _save_results(pd.DataFrame(rows), "sparsification_tradeoff_metrics.csv")
+            for repeat in range(SPARSIFICATION_REPEATS):
+                t0 = perf_counter()
+                W = knn_rbf_affinity_sigma_sparse(X, n_neighbors=nn, sigma=sigma)
+                graph_seconds = perf_counter() - t0
+                rows.append(_run_affinity_configuration(
+                    W,
+                    y,
+                    k,
+                    random_state + repeat,
+                    graph_seconds,
+                    {
+                        "dataset": dataset,
+                        "family": family,
+                        "graph": "knn_rbf",
+                        "n_neighbors": nn,
+                        "repeat": repeat,
+                        "alpha": 0.70,
+                        "sigma": sigma,
+                        "gamma": gamma_from_sigma(sigma),
+                    },
+                ))
+    raw = pd.DataFrame(rows)
+    _save_results(raw, "sparsification_tradeoff_repeats.csv")
+    good = raw[raw["error"].fillna("") == ""].copy()
+    group_cols = ["dataset", "family", "graph", "n_neighbors", "alpha", "sigma", "gamma"]
+    agg = good.groupby(group_cols, dropna=False).agg(
+        accuracy=("accuracy", "mean"),
+        ari=("ari", "mean"),
+        nmi=("nmi", "mean"),
+        purity=("purity", "mean"),
+        accuracy_std=("accuracy", "std"),
+        ari_std=("ari", "std"),
+        graph_seconds=("graph_seconds", "mean"),
+        graph_seconds_std=("graph_seconds", "std"),
+        eigensolver_seconds=("eigensolver_seconds", "mean"),
+        eigensolver_seconds_std=("eigensolver_seconds", "std"),
+        post_kmeans_seconds=("post_kmeans_seconds", "mean"),
+        post_kmeans_seconds_std=("post_kmeans_seconds", "std"),
+        total_seconds=("total_seconds", "mean"),
+        total_seconds_std=("total_seconds", "std"),
+        affinity_bytes=("affinity_bytes", "mean"),
+        nnz_affinity=("nnz_affinity", "mean"),
+        embedding_distortion=("embedding_distortion", "mean"),
+        repeats=("repeat", "count"),
+    ).reset_index()
+    df = _save_results(agg, "sparsification_tradeoff_metrics.csv")
     _plot_sparsification_tradeoff(df)
     return df
 
@@ -940,7 +970,7 @@ def run_sparsification_tradeoff(random_state: int = 0) -> pd.DataFrame:
 def _plot_sparsification_tradeoff(df: pd.DataFrame) -> None:
     import matplotlib.pyplot as plt
 
-    plot_df = df[df["error"].fillna("") == ""]
+    plot_df = df[df["error"].fillna("") == ""] if "error" in df.columns else df.copy()
     for xcol, xlabel, outfile in [
         ("total_seconds", "Total seconds", "sparsification_pareto_runtime.png"),
         ("nnz_affinity", "Number of nonzero affinity entries", "sparsification_pareto_edges.png"),
@@ -949,13 +979,14 @@ def _plot_sparsification_tradeoff(df: pd.DataFrame) -> None:
         for dataset in ["digits_0136", "digits_all", "two_moons", "circles", "blobs"]:
             sub = plot_df[(plot_df["dataset"] == dataset) & (plot_df["graph"] == "knn_rbf")].sort_values(xcol)
             if not sub.empty:
-                ax.plot(sub[xcol], sub["ari"], marker="o", label=f"{dataset} kNN")
+                ax.errorbar(sub[xcol], sub["ari"], yerr=sub["ari_std"].fillna(0), marker="o", capsize=2, label=f"{dataset} kNN")
             dense = plot_df[(plot_df["dataset"] == dataset) & (plot_df["graph"] == "dense_rbf_reference")]
             if not dense.empty:
                 ax.scatter(dense[xcol], dense["ari"], marker="X", s=70, label=f"{dataset} dense")
         ax.set_xlabel(xlabel)
         ax.set_ylabel("ARI")
         ax.set_title("Sparsification tradeoff")
+        ax.set_xscale("log")
         ax.set_ylim(-0.05, 1.05)
         ax.legend(fontsize=7, ncol=2)
         fig.tight_layout()

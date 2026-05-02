@@ -6,10 +6,10 @@
     "accuracy": 0.9983333333333332
   },
   "bridge_failure": {
-    "best_method": "spectral",
-    "ari": 0.5518463605662874,
-    "purity": 0.8716666666666667,
-    "accuracy": 0.8716666666666667
+    "best_method": "kmeans",
+    "ari": 0.532174165600094,
+    "purity": 0.865,
+    "accuracy": 0.865
   },
   "circles": {
     "best_method": "spectral",
@@ -18,7 +18,7 @@
     "accuracy": 1.0
   },
   "digits_01": {
-    "best_method": "spectral",
+    "best_method": "kmeans",
     "ari": 0.9778395211173349,
     "purity": 0.9944444444444444,
     "accuracy": 0.9944444444444444
@@ -36,10 +36,10 @@
     "accuracy": 1.0
   },
   "digits_all": {
-    "best_method": "spectral",
-    "ari": 0.6800511633486981,
-    "purity": 0.7846410684474123,
-    "accuracy": 0.7696160267111853
+    "best_method": "kmeans",
+    "ari": 0.4679268850431874,
+    "purity": 0.6232609905397886,
+    "accuracy": 0.5893155258764607
   },
   "high_dim_blobs": {
     "best_method": "spectral",
@@ -49,15 +49,15 @@
   },
   "high_dim_moons": {
     "best_method": "spectral",
-    "ari": 0.4043501367679072,
-    "purity": 0.8183333333333334,
-    "accuracy": 0.8183333333333334
+    "ari": 0.3958914827965165,
+    "purity": 0.815,
+    "accuracy": 0.815
   },
   "iris": {
-    "best_method": "spectral",
-    "ari": 0.7073626391173137,
-    "purity": 0.88,
-    "accuracy": 0.88
+    "best_method": "kmeans",
+    "ari": 0.6201351808870379,
+    "purity": 0.8333333333333334,
+    "accuracy": 0.8333333333333334
   },
   "karate_graph": {
     "best_method": "spectral",
@@ -66,10 +66,10 @@
     "accuracy": 0.9705882352941176
   },
   "overlapping_blobs_failure": {
-    "best_method": "spectral",
-    "ari": 0.3046314700744287,
-    "purity": 0.65,
-    "accuracy": 0.65
+    "best_method": "kmeans",
+    "ari": 0.2537533996147862,
+    "purity": 0.6066666666666667,
+    "accuracy": 0.57
   },
   "sbm_graph": {
     "best_method": "spectral",

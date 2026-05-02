@@ -64,7 +64,8 @@ Spectral clustering partitions data by exploiting the eigenstructure of a matrix
 \noindent 
 The benefits of NJW clustering is threefold. First, they propose a clean, specific algorithm for $k$-way clustering that uses $k$ eigenvectors simultaneously rather than applying a two-way cut recursively. Second, they provide an analysis---using matrix perturbation theory---that gives precise conditions under which the algorithm is guaranteed to succeed. Third, they demonstrate that a seemingly small implementation detail---row-normalizing the eigenvector matrix before applying $k$-means---is in fact critical and has a deep geometric justification.
 
-The NJW algorithm is closely related to the Normalized Cut (Ncut) of Shi and Malik~\cite{ShiMalik2000}, but differs in the Laplacian it employs. Whereas Shi and Malik work with the asymmetric random walk Laplacian $L_{\mathrm{rw}} = D^{-1}(D-W)$, NJW use the \textbf{symmetric normalized Laplacian} $L_{\mathrm{sym}} = D^{-1/2}(D - W)D^{-1/2}$. This difference has both numerical and theoretical consequences that we explore throughout this document.
+
+The NJW algorithm is closely related to the Normalized Cut (Ncut) of Shi and Malik~\cite{ShiMalik2000}, but differs in the Laplacian it employs. Whereas Shi and Malik work with the asymmetric random walk Laplacian $L_{\mathrm{rw}} = D^{-1}(D-W)$, NJW use the \textbf{symmetric normalized affinity matrix} $L = D^{-1/2}AD^{-1/2}$.
 
 % =============================================================
 \section{Setup: The Affinity Graph}

@@ -1,22 +1,34 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
+from time import perf_counter
 
 import networkx as nx
 import numpy as np
 import pandas as pd
+from scipy.sparse import issparse
 from sklearn.decomposition import PCA
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", message="Could not find the number of physical cores.*")
 
 from .clustering import (
     dense_rbf_affinity,
+    dense_rbf_affinity_sigma,
     first_laplacian_eigenvalues,
+    gamma_from_sigma,
     kmeans_baseline,
     knn_rbf_affinity_sparse,
+    knn_rbf_affinity_sigma_sparse,
+    median_knn_distance,
+    median_pairwise_distance,
     mutual_knn_rbf_affinity_sparse,
     ng_jordan_weiss,
     spectral_from_affinity,
     spectral_on_graph,
+    self_tuning_affinity,
 )
 from .data import (
     digits_pca_2d,
@@ -528,6 +540,429 @@ def run_failure_comparison_figures(random_state: int = 0) -> None:
         )
 
 
+SIGMA_ALPHAS = [0.10, 0.20, 0.35, 0.50, 0.70, 1.00, 1.40, 2.00, 3.00, 5.00]
+SPARSIFICATION_NEIGHBORS = [2, 3, 4, 6, 8, 10, 12, 16, 24, 32, 48]
+
+
+def _affinity_bytes(W) -> int:
+    if issparse(W):
+        A = W.tocsr()
+        return int(A.data.nbytes + A.indices.nbytes + A.indptr.nbytes)
+    return int(np.asarray(W).nbytes)
+
+
+def _embedding_distortion(Y: np.ndarray, labels: np.ndarray) -> float:
+    total = 0.0
+    for lab in np.unique(labels):
+        pts = Y[labels == lab]
+        if len(pts) == 0:
+            continue
+        center = pts.mean(axis=0, keepdims=True)
+        total += float(np.sum((pts - center) ** 2))
+    return total
+
+
+def _diagnostic_specs(random_state: int = 0):
+    from sklearn import datasets
+
+    success = make_success_datasets(random_state=random_state)
+    specs = []
+    for name, classes, k, neighbors in DIGITS_SPECS:
+        if name == "digits_all":
+            X, y = load_all_digits()
+        else:
+            X, y = load_digits_subset(classes=classes, random_state=random_state)
+        specs.append((name, X, y, k, neighbors, "digits"))
+    X_iris, y_iris = load_iris_data()
+    specs.append(("iris", X_iris, y_iris, 3, 12, "real"))
+    for name in ["two_moons", "circles", "blobs"]:
+        X, y, k, _ = success[name]
+        specs.append((name, X, y, k, SUCCESS_NEIGHBORS[name], "synthetic"))
+    return specs
+
+
+def _variable_density_data(random_state: int = 0):
+    rs = np.random.default_rng(random_state)
+    dense = rs.normal(loc=[-2.0, 0.0], scale=[0.22, 0.22], size=(180, 2))
+    diffuse = rs.normal(loc=[1.2, 0.0], scale=[0.95, 0.95], size=(240, 2))
+    small = rs.normal(loc=[0.0, 2.25], scale=[0.28, 0.28], size=(80, 2))
+    X = np.vstack([dense, diffuse, small])
+    y = np.concatenate([
+        np.zeros(len(dense), dtype=int),
+        np.ones(len(diffuse), dtype=int),
+        np.full(len(small), 2, dtype=int),
+    ])
+    return X, y, 3, 12
+
+
+def _run_affinity_configuration(W, y, k, random_state: int, graph_seconds: float, extra: dict) -> dict:
+    row = dict(extra)
+    row["graph_seconds"] = graph_seconds
+    row["affinity_bytes"] = _affinity_bytes(W)
+    row["nnz_affinity"] = int(W.nnz if issparse(W) else np.count_nonzero(W))
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            spec = spectral_from_affinity(W, n_clusters=k, random_state=random_state)
+        row.update(summarize(y, spec.labels))
+        row["eigensolver_seconds"] = spec.timings.get("eigensolver_seconds", np.nan)
+        row["post_kmeans_seconds"] = spec.timings.get("kmeans_seconds", np.nan)
+        row["total_seconds"] = graph_seconds + spec.timings.get("total_seconds", 0.0)
+        row["embedding_distortion"] = _embedding_distortion(spec.embedding, spec.labels)
+        row["error"] = ""
+    except Exception as exc:
+        row.update({"accuracy": np.nan, "ari": np.nan, "nmi": np.nan, "purity": np.nan})
+        row["eigensolver_seconds"] = np.nan
+        row["post_kmeans_seconds"] = np.nan
+        row["total_seconds"] = np.nan
+        row["embedding_distortion"] = np.nan
+        row["error"] = str(exc)
+    return row
+
+
+def _build_sigma_affinity(X: np.ndarray, graph: str, n_neighbors: int, alpha: float):
+    if graph == "dense_rbf":
+        base = median_pairwise_distance(X)
+        sigma = alpha * base
+        t0 = perf_counter()
+        W = dense_rbf_affinity_sigma(X, sigma=sigma)
+        graph_seconds = perf_counter() - t0
+    elif graph == "knn_rbf":
+        base = median_knn_distance(X, n_neighbors=n_neighbors)
+        sigma = alpha * base
+        t0 = perf_counter()
+        W = knn_rbf_affinity_sigma_sparse(X, n_neighbors=n_neighbors, sigma=sigma)
+        graph_seconds = perf_counter() - t0
+    else:
+        raise ValueError(f"unknown graph type: {graph}")
+    return W, sigma, base, graph_seconds
+
+
+def run_sigma_sweep(random_state: int = 0) -> pd.DataFrame:
+    rows = []
+    baselines = []
+    for dataset, X, y, k, nn, family in _diagnostic_specs(random_state=random_state):
+        km = kmeans_baseline(X, n_clusters=k, random_state=random_state)
+        km_metrics = summarize(y, km.labels)
+        baselines.append({
+            "dataset": dataset,
+            "kmeans_accuracy": km_metrics["accuracy"],
+            "kmeans_ari": km_metrics["ari"],
+            "kmeans_nmi": km_metrics["nmi"],
+            "kmeans_purity": km_metrics["purity"],
+        })
+        for graph in ["dense_rbf", "knn_rbf"]:
+            for alpha in SIGMA_ALPHAS:
+                W, sigma, base, graph_seconds = _build_sigma_affinity(X, graph, nn, alpha)
+                rows.append(_run_affinity_configuration(
+                    W,
+                    y,
+                    k,
+                    random_state,
+                    graph_seconds,
+                    {
+                        "dataset": dataset,
+                        "family": family,
+                        "graph": graph,
+                        "alpha": alpha,
+                        "base_distance": base,
+                        "sigma": sigma,
+                        "gamma": gamma_from_sigma(sigma),
+                        "n_neighbors": nn if graph == "knn_rbf" else np.nan,
+                    },
+                ))
+
+    df = _save_results(pd.DataFrame(rows), "sigma_sweep_metrics.csv")
+    baseline_df = pd.DataFrame(baselines)
+    best = (
+        df[df["error"].fillna("") == ""]
+        .sort_values(["dataset", "graph", "ari", "purity", "accuracy"], ascending=[True, True, False, False, False])
+        .groupby(["dataset", "graph"], as_index=False)
+        .head(1)
+        .merge(baseline_df, on="dataset", how="left")
+    )
+    _save_results(best, "sigma_sweep_best_by_dataset.csv")
+    _plot_sigma_sweep(df, best, baseline_df)
+    run_sigma_eigengap_sweep(random_state=random_state)
+    return df
+
+
+def _plot_sigma_sweep(df: pd.DataFrame, best: pd.DataFrame, baseline_df: pd.DataFrame) -> None:
+    import matplotlib.pyplot as plt
+
+    digits = df[df["dataset"].str.startswith("digits")].copy()
+    fig, axes = plt.subplots(2, 2, figsize=(11.0, 7.2), sharex=True, sharey=True)
+    for ax, dataset in zip(axes.ravel(), ["digits_01", "digits_17", "digits_0136", "digits_all"]):
+        part = digits[(digits["dataset"] == dataset) & (digits["error"].fillna("") == "")]
+        for graph, label in [("dense_rbf", "dense RBF"), ("knn_rbf", "kNN-RBF")]:
+            sub = part[part["graph"] == graph].sort_values("alpha")
+            ax.plot(sub["alpha"], sub["ari"], marker="o", label=label)
+        base = baseline_df[baseline_df["dataset"] == dataset]
+        if not base.empty:
+            ax.axhline(float(base.iloc[0]["kmeans_ari"]), color="black", linestyle="--", linewidth=1.2, label="k-means")
+        ax.set_title(dataset)
+        ax.set_xlabel(r"$\alpha$ in $\sigma=\alpha r_{\mathrm{med}}$")
+        ax.set_ylabel("ARI")
+        ax.set_xscale("log")
+        ax.set_ylim(-0.05, 1.05)
+    axes[0, 0].legend(fontsize=8)
+    fig.suptitle("Digit sensitivity to RBF scale")
+    fig.tight_layout()
+    fig.savefig(figures_dir() / "digits_sigma_sweep_ari.png", dpi=220)
+    plt.close(fig)
+
+    pivot = best[best["dataset"].str.startswith("digits")].pivot(index="dataset", columns="graph", values="ari")
+    labels = [f"{v:.2f}" for v in best[best["dataset"].str.startswith("digits")]["alpha"].tolist()]
+    fig, ax = plt.subplots(figsize=(6.6, 3.8))
+    im = ax.imshow(pivot.to_numpy(dtype=float), vmin=0.0, vmax=1.0, aspect="auto")
+    ax.set_xticks(np.arange(len(pivot.columns)), pivot.columns)
+    ax.set_yticks(np.arange(len(pivot.index)), pivot.index)
+    ax.set_title("Best digit ARI over sigma sweep")
+    for i, ds in enumerate(pivot.index):
+        for j, graph in enumerate(pivot.columns):
+            row = best[(best["dataset"] == ds) & (best["graph"] == graph)].iloc[0]
+            ax.text(j, i, f"ARI={row['ari']:.2f}\nα={row['alpha']:.2f}", ha="center", va="center", fontsize=8)
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("Best ARI")
+    fig.tight_layout()
+    fig.savefig(figures_dir() / "digits_sigma_sweep_summary.png", dpi=220)
+    plt.close(fig)
+
+
+def run_adaptive_sigma(random_state: int = 0) -> pd.DataFrame:
+    specs = [("variable_density", *_variable_density_data(random_state=random_state), "synthetic")]
+    for dataset, X, y, k, nn, family in _diagnostic_specs(random_state=random_state):
+        if dataset.startswith("digits") or dataset in {"two_moons", "circles", "blobs"}:
+            specs.append((dataset, X, y, k, nn, family))
+
+    rows = []
+    for dataset, X, y, k, nn, family in specs:
+        base = median_knn_distance(X, n_neighbors=nn)
+        sigma = 0.70 * base
+        methods = [
+            ("fixed_global_knn", lambda: knn_rbf_affinity_sigma_sparse(X, n_neighbors=nn, sigma=sigma)),
+            ("local_nth_dense", lambda: self_tuning_affinity(X, local_neighbors=7, mode="nth")),
+            ("local_mean_dense", lambda: self_tuning_affinity(X, local_neighbors=7, mode="mean")),
+        ]
+        for method, build in methods:
+            t0 = perf_counter()
+            W = build()
+            graph_seconds = perf_counter() - t0
+            rows.append(_run_affinity_configuration(
+                W,
+                y,
+                k,
+                random_state,
+                graph_seconds,
+                {
+                    "dataset": dataset,
+                    "family": family,
+                    "method": method,
+                    "local_neighbors": 7 if method.startswith("local") else np.nan,
+                    "n_neighbors": nn if method == "fixed_global_knn" else np.nan,
+                    "sigma": sigma if method == "fixed_global_knn" else np.nan,
+                },
+            ))
+    df = _save_results(pd.DataFrame(rows), "adaptive_sigma_metrics.csv")
+    _plot_adaptive_sigma(df, random_state=random_state)
+    return df
+
+
+def _plot_adaptive_sigma(df: pd.DataFrame, random_state: int = 0) -> None:
+    import matplotlib.pyplot as plt
+
+    X, y, k, nn = _variable_density_data(random_state=random_state)
+    panels = [("Ground truth", y)]
+    for method in ["fixed_global_knn", "local_nth_dense", "local_mean_dense"]:
+        if method == "fixed_global_knn":
+            sigma = 0.70 * median_knn_distance(X, n_neighbors=nn)
+            W = knn_rbf_affinity_sigma_sparse(X, n_neighbors=nn, sigma=sigma)
+        else:
+            mode = "nth" if method == "local_nth_dense" else "mean"
+            W = self_tuning_affinity(X, local_neighbors=7, mode=mode)
+        spec = spectral_from_affinity(W, n_clusters=k, random_state=random_state)
+        panels.append((method.replace("_", " "), spec.labels))
+    fig, axes = plt.subplots(1, len(panels), figsize=(4.0 * len(panels), 3.6))
+    for ax, (title, labels) in zip(axes, panels):
+        ax.scatter(X[:, 0], X[:, 1], c=labels, cmap="tab10", s=8, alpha=0.8, linewidths=0)
+        ax.set_title(title, fontsize=9)
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_aspect("equal", adjustable="box")
+    fig.suptitle("Adaptive sigma on variable-density data")
+    fig.tight_layout()
+    fig.savefig(figures_dir() / "adaptive_sigma_variable_density.png", dpi=220)
+    plt.close(fig)
+
+    plot_df = df[df["error"].fillna("") == ""].copy()
+    order = ["variable_density", "digits_0136", "digits_all", "two_moons", "circles", "blobs"]
+    plot_df = plot_df[plot_df["dataset"].isin(order)]
+    pivot = plot_df.pivot(index="dataset", columns="method", values="ari").reindex(order)
+    pivot.plot(kind="bar", figsize=(9.0, 4.8))
+    plt.ylabel("ARI")
+    plt.title("Fixed global sigma versus local adaptive sigma")
+    plt.xticks(rotation=25, ha="right")
+    plt.tight_layout()
+    plt.savefig(figures_dir() / "adaptive_sigma_metrics.png", dpi=220)
+    plt.close()
+
+
+def run_sigma_eigengap_sweep(random_state: int = 0) -> pd.DataFrame:
+    specs = [("variable_density", *_variable_density_data(random_state=random_state), "synthetic")]
+    for dataset, X, y, k, nn, family in _diagnostic_specs(random_state=random_state):
+        if dataset.startswith("digits") or dataset in {"two_moons", "circles"}:
+            specs.append((dataset, X, y, k, nn, family))
+    rows = []
+    for dataset, X, y, k, nn, family in specs:
+        for graph in ["dense_rbf", "knn_rbf"]:
+            for alpha in SIGMA_ALPHAS:
+                W, sigma, base, graph_seconds = _build_sigma_affinity(X, graph, nn, alpha)
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", RuntimeWarning)
+                        vals = first_laplacian_eigenvalues(W, n_eigs=12)
+                        spec = spectral_from_affinity(W, n_clusters=k, random_state=random_state)
+                    metrics = summarize(y, spec.labels)
+                    gaps = np.diff(vals)
+                    max_check = min(len(gaps), 10)
+                    pred_k = int(np.argmax(gaps[:max_check]) + 1) if max_check > 0 else np.nan
+                    true_gap = float(vals[k] - vals[k - 1]) if len(vals) > k else np.nan
+                    error = ""
+                except Exception as exc:
+                    vals = np.full(12, np.nan)
+                    metrics = {"accuracy": np.nan, "ari": np.nan, "nmi": np.nan, "purity": np.nan}
+                    pred_k = np.nan
+                    true_gap = np.nan
+                    error = str(exc)
+                for idx, val in enumerate(vals, start=1):
+                    rows.append({
+                        "dataset": dataset,
+                        "family": family,
+                        "graph": graph,
+                        "alpha": alpha,
+                        "base_distance": base,
+                        "sigma": sigma,
+                        "gamma": gamma_from_sigma(sigma),
+                        "eigen_index": idx,
+                        "eigenvalue_lsym": float(val),
+                        "k_true": k,
+                        "true_k_gap": true_gap,
+                        "predicted_k_largest_gap": pred_k,
+                        "graph_seconds": graph_seconds,
+                        **metrics,
+                        "error": error,
+                    })
+    df = _save_results(pd.DataFrame(rows), "sigma_eigengap_sweep.csv")
+    _plot_sigma_eigengap_sweep(df)
+    return df
+
+
+def _plot_sigma_eigengap_sweep(df: pd.DataFrame) -> None:
+    import matplotlib.pyplot as plt
+
+    summary = df[df["eigen_index"] == 1].copy()
+    digits = summary[summary["dataset"].str.startswith("digits")]
+    fig, axes = plt.subplots(2, 2, figsize=(11.0, 7.2), sharex=True)
+    for ax, dataset in zip(axes.ravel(), ["digits_01", "digits_17", "digits_0136", "digits_all"]):
+        part = digits[(digits["dataset"] == dataset) & (digits["error"].fillna("") == "")]
+        for graph, label in [("dense_rbf", "dense RBF"), ("knn_rbf", "kNN-RBF")]:
+            sub = part[part["graph"] == graph].sort_values("alpha")
+            ax.plot(sub["alpha"], sub["true_k_gap"], marker="o", label=f"{label} true-k gap")
+        ax2 = ax.twinx()
+        sub = part[part["graph"] == "knn_rbf"].sort_values("alpha")
+        ax2.plot(sub["alpha"], sub["predicted_k_largest_gap"], color="gray", linestyle="--", marker="x", label="kNN predicted k")
+        ax.set_title(dataset)
+        ax.set_xscale("log")
+        ax.set_xlabel(r"$\alpha$ in $\sigma=\alpha r_{\mathrm{med}}$")
+        ax.set_ylabel("True-k eigengap")
+        ax2.set_ylabel("Predicted k")
+    axes[0, 0].legend(fontsize=8, loc="upper left")
+    fig.suptitle("Digit eigengap sensitivity to RBF scale")
+    fig.tight_layout()
+    fig.savefig(figures_dir() / "digits_sigma_eigengap_sweep.png", dpi=220)
+    plt.close(fig)
+
+
+def run_sparsification_tradeoff(random_state: int = 0) -> pd.DataFrame:
+    rows = []
+    for dataset, X, y, k, nn_default, family in _diagnostic_specs(random_state=random_state):
+        if dataset not in {"digits_0136", "digits_all", "two_moons", "circles", "blobs"}:
+            continue
+        dense_sigma = 0.70 * median_pairwise_distance(X)
+        t0 = perf_counter()
+        W_dense = dense_rbf_affinity_sigma(X, sigma=dense_sigma)
+        dense_graph_seconds = perf_counter() - t0
+        rows.append(_run_affinity_configuration(
+            W_dense,
+            y,
+            k,
+            random_state,
+            dense_graph_seconds,
+            {
+                "dataset": dataset,
+                "family": family,
+                "graph": "dense_rbf_reference",
+                "n_neighbors": np.nan,
+                "alpha": 0.70,
+                "sigma": dense_sigma,
+                "gamma": gamma_from_sigma(dense_sigma),
+            },
+        ))
+        for nn in SPARSIFICATION_NEIGHBORS:
+            if nn >= X.shape[0]:
+                continue
+            base = median_knn_distance(X, n_neighbors=nn)
+            sigma = 0.70 * base
+            t0 = perf_counter()
+            W = knn_rbf_affinity_sigma_sparse(X, n_neighbors=nn, sigma=sigma)
+            graph_seconds = perf_counter() - t0
+            rows.append(_run_affinity_configuration(
+                W,
+                y,
+                k,
+                random_state,
+                graph_seconds,
+                {
+                    "dataset": dataset,
+                    "family": family,
+                    "graph": "knn_rbf",
+                    "n_neighbors": nn,
+                    "alpha": 0.70,
+                    "sigma": sigma,
+                    "gamma": gamma_from_sigma(sigma),
+                },
+            ))
+    df = _save_results(pd.DataFrame(rows), "sparsification_tradeoff_metrics.csv")
+    _plot_sparsification_tradeoff(df)
+    return df
+
+
+def _plot_sparsification_tradeoff(df: pd.DataFrame) -> None:
+    import matplotlib.pyplot as plt
+
+    plot_df = df[df["error"].fillna("") == ""]
+    for xcol, xlabel, outfile in [
+        ("total_seconds", "Total seconds", "sparsification_pareto_runtime.png"),
+        ("nnz_affinity", "Number of nonzero affinity entries", "sparsification_pareto_edges.png"),
+    ]:
+        fig, ax = plt.subplots(figsize=(7.6, 5.0))
+        for dataset in ["digits_0136", "digits_all", "two_moons", "circles", "blobs"]:
+            sub = plot_df[(plot_df["dataset"] == dataset) & (plot_df["graph"] == "knn_rbf")].sort_values(xcol)
+            if not sub.empty:
+                ax.plot(sub[xcol], sub["ari"], marker="o", label=f"{dataset} kNN")
+            dense = plot_df[(plot_df["dataset"] == dataset) & (plot_df["graph"] == "dense_rbf_reference")]
+            if not dense.empty:
+                ax.scatter(dense[xcol], dense["ari"], marker="X", s=70, label=f"{dataset} dense")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("ARI")
+        ax.set_title("Sparsification tradeoff")
+        ax.set_ylim(-0.05, 1.05)
+        ax.legend(fontsize=7, ncol=2)
+        fig.tight_layout()
+        fig.savefig(figures_dir() / outfile, dpi=220)
+        plt.close(fig)
+
+
 def run_bottleneck_breakdown(random_state: int = 0) -> pd.DataFrame:
     df = pd.read_csv(results_dir() / "scaling_metrics.csv")
     sdf = df[df["method"] == "spectral"].copy()
@@ -549,6 +984,9 @@ def run_all_experiments(random_state: int = 0) -> dict[str, pd.DataFrame]:
         "eigengap": run_eigengap_study(random_state=random_state),
         "graph_ablation": run_graph_construction_ablation(random_state=random_state),
         "failure_taxonomy": run_failure_taxonomy(random_state=random_state),
+        "sigma_sweep": run_sigma_sweep(random_state=random_state),
+        "adaptive_sigma": run_adaptive_sigma(random_state=random_state),
+        "sparsification": run_sparsification_tradeoff(random_state=random_state),
         "bottleneck": run_bottleneck_breakdown(random_state=random_state),
     }
     run_summary_figures()

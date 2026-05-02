@@ -64,7 +64,7 @@ Spectral clustering partitions data by exploiting the eigenstructure of a matrix
 \noindent 
 The benefits of NJW clustering is threefold. First, they propose a clean, specific algorithm for $k$-way clustering that uses $k$ eigenvectors simultaneously rather than applying a two-way cut recursively. Second, they provide an analysis---using matrix perturbation theory---that gives precise conditions under which the algorithm is guaranteed to succeed. Third, they demonstrate that a seemingly small implementation detail---row-normalizing the eigenvector matrix before applying $k$-means---is in fact critical and has a deep geometric justification.
 
-The NJW algorithm is closely related to the Normalized Cut (Ncut) of Shi and Malik~\cite{ShiMalik2000}, but differs in the Laplacian it employs. Whereas Shi and Malik work with the asymmetric random walk Laplacian $L_{\mathrm{rw}} = D^{-1}(D-W)$, NJW use the \textbf{symmetric normalized Laplacian} $L_{\mathrm{sym}} = D^{-1/2}(D - W)D^{-1/2}$. This difference has both numerical and theoretical consequences that we explore throughout this document.
+The NJW algorithm is closely related to the Normalized Cut (Ncut) of Shi and Malik~\cite{shi2000normalized}, but differs in the Laplacian it employs. Whereas Shi and Malik work with the asymmetric random walk Laplacian $L_{\mathrm{rw}} = D^{-1}(D-W)$, NJW use the \textbf{symmetric normalized Laplacian} $L_{\mathrm{sym}} = D^{-1/2}(D - W)D^{-1/2}$. This difference has both numerical and theoretical consequences that we explore throughout this document.
 
 % =============================================================
 \section{Setup: The Affinity Graph}
@@ -84,6 +84,15 @@ Let $S = \{s_1, s_2, \ldots, s_n\} \subset \mathbb{R}^l$ be the dataset. NJW rep
 where $\sigma^2 > 0$ is a scale parameter that controls how quickly affinity decays with distance. NJW set self-affinities $A_{ii} = 0$ to prevent a vertex from dominating its own degree.
 
 The matrix $A$ is symmetric and nonnegative. It plays the role of $W$ in the graph Laplacian literature. The parameter $\sigma^2$ is the primary hyperparameter of the method: a large $\sigma^2$ makes all pairs nearly equally similar, collapsing all cluster structure; a small $\sigma^2$ makes the graph sparse and sensitive to scale. NJW later show that $\sigma^2$ can be chosen automatically by searching for the value that produces the tightest clusters in the spectral embedding (see Section~\ref{sec:sigma}).
+
+\subsection{Dense NJW affinities and sparse $k$-NN affinities}
+The original NJW construction uses a dense Gaussian affinity: every pair of distinct points receives a positive edge weight. In the experiments below we also use a symmetrized sparse $k$-nearest-neighbor variant,
+\[
+W_{ij}^{\mathrm{kNN}}=
+\mathbf{1}\!\left\{j\in\mathcal{N}_m(i)\ \mathrm{or}\ i\in\mathcal{N}_m(j)\right\}
+\exp\!\left(-\frac{\|x_i-x_j\|^2}{2\sigma^2}\right),
+\]
+where $\mathcal{N}_m(i)$ is the set of $m$ nearest neighbors of $x_i$. This is not only a computational shortcut. The dense graph represents global pairwise similarity, while the $k$-NN graph first restricts attention to local relationships and then applies the same RBF weighting on the retained edges. The stored graph therefore drops from $O(n^2)$ possible edges to $O(mn)$ edges, but the inductive bias also changes: local manifold connectivity becomes more important than small nonzero affinities between distant points. In the code, edge weights are sometimes written as $\exp(-\gamma\|x_i-x_j\|^2)$; throughout the paper we parameterize the same quantity by $\sigma$, with $\gamma=1/(2\sigma^2)$.
 
 \subsection{Degree Matrix and Symmetric Normalized Laplacian}
 
@@ -333,7 +342,6 @@ In the discussion below, ARI is the most informative single metric because it is
 We used the following groups of experiments.
 \begin{itemize}[leftmargin=1.4em]
     \item \textbf{Synthetic success cases:} two moons, concentric circles, Gaussian blobs, high-dimensional moons (moons embedded in 20 dimensions), and high-dimensional blobs.
-    \item \textbf{Synthetic stress cases:} overlapping blobs and a bridge-connected two-cluster dataset.
     \item \textbf{Real/vector datasets:} Iris and four digit experiments: $\{0,1\}$, $\{1,7\}$, $\{0,1,3,6\}$, and all ten classes. We use \texttt{sklearn.datasets.load\_digits}, which provides a compact and reproducible benchmark \cite{sklearnDigits}.
     \item \textbf{Graph datasets:} Zachary's karate club and a stochastic block model benchmark.
     \item \textbf{Robustness and scaling:} a Gaussian-noise sweep on two moons, and a runtime/memory benchmark as $n$ increases.
@@ -342,7 +350,7 @@ We used the following groups of experiments.
 For graph datasets, plain feature-space $k$-means is not naturally defined. To keep the comparison explicit, we used a weak but transparent baseline: $k$-means on adjacency rows. This is not a state-of-the-art graph clustering baseline, but it provides a concrete comparator.
 
 \section{Results: synthetic data}
-Table~\ref{tab:synthetic} summarizes the main synthetic experiments. The expected pattern is visible on the clean low-dimensional examples: spectral clustering strongly beats $k$-means on non-convex geometry (two moons, circles), and ties or nearly ties on well-separated blobs. The stress cases are more nuanced. On high-dimensional moons, spectral clustering has a modest quantitative advantage, but the 2D projection in Figure~\ref{fig:highdim} makes clear that neither method cleanly recovers the original moon structure after many noisy coordinates are added. On the bridge-connected dataset, Figure~\ref{fig:failure2} illustrates the failure mode we care about: both methods struggle around the thin connector, and NJW no longer yields a clean low-density cut that matches the reference labels.
+Table~\ref{tab:synthetic} summarizes the main synthetic experiments. The expected pattern is visible on the clean low-dimensional examples: spectral clustering strongly beats $k$-means on non-convex geometry (two moons, circles), and ties or nearly ties on well-separated blobs. On high-dimensional moons, spectral clustering has a modest quantitative advantage, but the 2D projection in Figure~\ref{fig:highdim} makes clear that neither method cleanly recovers the original moon structure after many noisy coordinates are added.
 
 \begin{table}[H]
 \centering
@@ -357,13 +365,11 @@ Circles & 1.000 & -0.002 & Spectral cleanly separates rings. \\
 Blobs & 0.990 & 0.995 & Both methods work on convex, separated clusters. \\
 High-dim moons & 0.404 & 0.259 & Both methods degrade; spectral keeps a modest numerical edge. \\
 High-dim blobs & 1.000 & 1.000 & Both methods remain strong. \\
-Overlapping blobs & 0.302 & 0.254 & Ambiguous partition; both methods degrade. \\
-Bridge stress & 0.552 & 0.532 & Thin bridge partially weakens the intended cut. \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectral clustering does exactly what we expect on two moons and concentric circles. The high-dimensional moons plus the two stress cases are intentionally less clean: Figures~\ref{fig:failure_overlap} and~\ref{fig:failure2} show how different they are with the ground truth (one might argue these cases are too dificult to expect any traction.)
+Figures~\ref{fig:moons}--\ref{fig:highdim} show representative examples. Spectral clustering does exactly what we expect on two moons and concentric circles. The high-dimensional moons example is intentionally less clean: the first two coordinates remain visually moon-shaped, but the added noise coordinates still weaken the neighborhood graph used by the algorithm.
 
 \begin{figure}[H]
     \centering
@@ -388,22 +394,6 @@ Figures~\ref{fig:moons}--\ref{fig:failure2} show representative examples. Spectr
     \caption{Moons embedded in higher dimension using additional noise coordinates, plotted here using the first two coordinates. Both methods degrade; spectral clustering retains a modest quantitative advantage but no longer cleanly recovers the moon structure in this view.}
     \label{fig:highdim}
 \end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.85\textwidth]{final_pic/overlapping_groundtruth_kmeans_njw.png}
-    \caption{Overlapping-blobs stress case in original 2D coordinates $(x,y)$, shown as ground truth (left), $k$-means (middle), and NJW spectral clustering (right). Because the classes overlap strongly in feature space, there is no clean boundary for either method; this is an ambiguity-driven failure - no method can every recover the label - unless embed into a higher dimension space with better feature representation.}
-    \label{fig:failure_overlap}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.85\textwidth]{final_pic/bridge_groundtruth_kmeans_njw.png}
-    \caption{Bridge-connected stress case in original 2D coordinates $(x,y)$, shown as ground truth (left), $k$-means (middle), and NJW spectral clustering (right). The thin bridge creates ambiguous assignments near the connection.}
-    \label{fig:failure2}
-\end{figure}
-
-The bridge-connected example is also a useful reminder that a visually plausible 2D partition need not yield a high pairwise clustering score. Comparing the three panels in Figure~\ref{fig:failure2}, the two endpoint masses look separable at a glance, but the bridge region generates many ambiguous labels for both algorithms. Because ARI evaluates agreement at the level of point pairs rather than only the gross shape of the partition, errors on a relatively small set of bridge points can induce a much larger number of pairwise disagreements. This is exactly the kind of failure we mean in this report: not random labeling everywhere, but a structurally important mismatch between the graph-induced cut and the intended classes.
 
 \section{Results: real data and digit subsets}
 We study four digit subsets of increasing difficulty: $\{0,1\}$, $\{1,7\}$, $\{0,1,3,6\}$, and all digits. This progression makes it possible to distinguish regimes where local graph structure is helpful from regimes where raw pixel-space geometry already favors centroid-based clustering. Table~\ref{tab:digits} reports those results. The outcome is deliberately presented as a mixed result rather than a blanket win for spectral clustering. Spectral clustering is excellent on $\{0,1\}$ and strong on all ten digits, but it is slightly worse than $k$-means on $\{1,7\}$ and clearly worse on $\{0,1,3,6\}$ for the particular $k$-NN graph used here. Our hypothesis is that raw pixel-space Euclidean distances already separate some digit subsets nearly linearly, while the local graph can become brittle when classes have different stroke styles and densities.
@@ -483,9 +473,8 @@ Figure~\ref{fig:scaling} reports runtime and approximate memory scaling. The plo
 
 \section{Additional experiments}
 
-Below are some extra experiments we do for fun! They are not required in the project outline. Feel free to skip them for grading but they are pretty interesting!
 \subsection{Parameter sensitivity map}
-Spectral clustering depends strongly on the graph it constructs. Figure~\ref{fig:paramsensitivity} shows a phase-diagram style sweep on two moons, varying both the \textbf{feature noise} $\sigma$ and the \textbf{number of nearest neighbors} $k$ in the $k$-NN graph. The final red-outlined column reports the $k$-means ARI at the same noise level, providing a reference for when spectral clustering degenerates to centroid-style behavior.
+Spectral clustering depends strongly on the graph it constructs. Figure~\ref{fig:paramsensitivity} shows a phase-diagram style sweep on two moons, varying both the \textbf{feature-noise level} $\eta$ and the \textbf{number of nearest neighbors} $k$ in the $k$-NN graph. The final red-outlined column reports the $k$-means ARI at the same noise level, providing a reference for when spectral clustering degenerates to centroid-style behavior.
 
 The dominant structure in the heatmap is a stable high-ARI band at moderate $k$ under low noise. Two distinct failure regimes emerge:
 \begin{itemize}[leftmargin=1.4em]
@@ -496,7 +485,7 @@ The dominant structure in the heatmap is a stable high-ARI band at moderate $k$ 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.78\textwidth]{final_pic/parameter_sensitivity_heatmap.png}
-    \caption{Parameter sensitivity map on two moons. Each cell reports ARI for NJW spectral clustering as noise $\sigma$ (rows) and graph degree $k$ (columns) vary. The red-outlined column gives the $k$-means baseline at the same noise level; note how spectral ARI converges to it when $k$ is large.}
+    \caption{Parameter sensitivity map on two moons. Each cell reports ARI for NJW spectral clustering as feature-noise level $\eta$ (rows) and graph degree $k$ (columns) vary. The red-outlined column gives the $k$-means baseline at the same noise level; note how spectral ARI converges to it when $k$ is large.}
     \label{fig:paramsensitivity}
 \end{figure}
 
@@ -504,19 +493,19 @@ Figures~\ref{fig:paramsensitivityrows} and~\ref{fig:paramsensitivitycols} transl
 
 \textbf{Row slices (Figure~\ref{fig:paramsensitivityrows}).} Each row fixes the noise level and sweeps $k \in \{3, 8, 12, 28\}$.
 \begin{itemize}[leftmargin=1.4em]
-    \item \emph{Low noise ($\sigma=0.02$):} All four $k$ values recover clean two-moon assignments (ARI $\approx 1.0$). The moon geometry is so strong that almost any connected graph finds it.
-    \item \emph{High noise ($\sigma=0.28$):} ARI drops to $\approx 0.2$ across the board. The scatter plots show that points from both moons are scrambled in feature space; no $k$ value rescues the structure.
-    \item \emph{Extreme noise ($\sigma=0.36$):} ARI collapses to $\approx 0.05$---near random. Visually the two moons are entirely merged, and spectral clustering assigns clusters that bear no relationship to the original labels.
+    \item \emph{Low noise ($\eta=0.02$):} All four $k$ values recover clean two-moon assignments (ARI $\approx 1.0$). The moon geometry is so strong that almost any connected graph finds it.
+    \item \emph{High noise ($\eta=0.28$):} ARI drops to $\approx 0.2$ across the board. The scatter plots show that points from both moons are scrambled in feature space; no $k$ value rescues the structure.
+    \item \emph{Extreme noise ($\eta=0.36$):} ARI collapses to $\approx 0.05$---near random. Visually the two moons are entirely merged, and spectral clustering assigns clusters that bear no relationship to the original labels.
 \end{itemize}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{final_pic/parameter_sensitivity_rows.png}
-    \caption{Representative row slices of the sensitivity map. Each panel shows actual NJW cluster assignments on two moons for a fixed noise level $\sigma$ (row) and graph degree $k$ (column). Color encodes predicted cluster. The ARI annotated in each title matches the heatmap cell.}
+    \caption{Representative row slices of the sensitivity map. Each panel shows actual NJW cluster assignments on two moons for a fixed feature-noise level $\eta$ (row) and graph degree $k$ (column). Color encodes predicted cluster. The ARI annotated in each title matches the heatmap cell.}
     \label{fig:paramsensitivityrows}
 \end{figure}
 
-\textbf{Column slice (Figure~\ref{fig:paramsensitivitycols}).} Fixing $k=12$, noise increases left to right from $\sigma=0.02$ to $\sigma=0.36$. This provides a visual explanation for why ARI degrades: the manifold that gives spectral clustering its advantage is progressively erased by noise, and the graph can no longer encode any low-density separation.
+\textbf{Column slice (Figure~\ref{fig:paramsensitivitycols}).} Fixing $k=12$, noise increases left to right from $\eta=0.02$ to $\eta=0.36$. This provides a visual explanation for why ARI degrades: the manifold that gives spectral clustering its advantage is progressively erased by noise, and the graph can no longer encode any low-density separation.
 
 \begin{figure}[H]
     \centering
@@ -525,48 +514,107 @@ Figures~\ref{fig:paramsensitivityrows} and~\ref{fig:paramsensitivitycols} transl
     \label{fig:paramsensitivitycols}
 \end{figure}
 
+\subsection{RBF scale sensitivity}
+The digit results raise a natural question: how much of the gap between NJW spectral clustering and $k$-means is due to the chosen RBF scale? To isolate this effect, we swept
+\[
+\sigma = \alpha r_{\mathrm{med}}, \qquad
+\alpha\in\{0.10,0.20,0.35,0.50,0.70,1.00,1.40,2.00,3.00,5.00\},
+\]
+where $r_{\mathrm{med}}$ is the median all-pairs distance for dense RBF graphs and the median retained-edge distance for $k$-NN RBF graphs. The current default scale is closest to $\alpha\approx 0.70$.
+
+Figure~\ref{fig:sigmasweepdigits} shows that sigma tuning changes the interpretation of the digit experiments. On $\{0,1,3,6\}$, dense RBF improves to ARI $0.865$, slightly above the $k$-means baseline ARI $0.838$, while the best $k$-NN RBF setting remains lower at ARI $0.702$. On all digits, the pattern reverses: dense RBF reaches only ARI $0.541$, while $k$-NN RBF reaches ARI $0.788$, well above the $k$-means baseline ARI $0.468$. Thus the weaker $\{0,1,3,6\}$ result is not simply an algorithmic limitation of spectral clustering, but a sign that graph construction and scale interact strongly with the dataset.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{final_pic/digits_sigma_sweep_ari.png}
+    \caption{Digit ARI as the RBF scale $\sigma=\alpha r_{\mathrm{med}}$ varies. Dense RBF and symmetrized $k$-NN RBF are swept separately, with the $k$-means baseline shown as a dashed horizontal line. The best scale can change the conclusion on $\{0,1,3,6\}$, while all-digits performance continues to favor the sparse graph.}
+    \label{fig:sigmasweepdigits}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{final_pic/digits_sigma_sweep_summary.png}
+    \caption{Best digit ARI over the sigma sweep, with the selected multiplier $\alpha$ shown in each cell. These values are diagnostic only; the earlier headline tables are not retuned in this revision.}
+    \label{fig:sigmasweepsummary}
+\end{figure}
+
+\subsection{Adaptive local scale}
+A single global $\sigma$ can be inappropriate when the data have very different local densities. We therefore compared fixed global scaling with a local scaling rule from Zelnik-Manor and Perona~\cite{zelnik2004selftuning}:
+\[
+W_{ij}^{\mathrm{self}} =
+\exp\!\left(-\frac{\|x_i-x_j\|^2}{\sigma_i\sigma_j}\right),
+\]
+where $\sigma_i$ is chosen from the local neighborhood of $x_i$. We tested two choices: the distance from $x_i$ to its $7$th nearest neighbor, and the average distance from $x_i$ to its first $7$ nearest neighbors.
+
+Figure~\ref{fig:adaptivesigma} shows why this matters. On a variable-density synthetic dataset, fixed global scaling reaches ARI $0.670$, while the local-scale variants reach about ARI $0.934$. The same idea also helps the digit subset $\{0,1,3,6\}$, where the average-neighbor local scale reaches ARI $0.803$. It is not universally better, however: on all ten digits the local dense variants underperform the sparse $k$-NN baseline. Local scaling is therefore best viewed as a useful graph-construction option, not a default replacement.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{final_pic/adaptive_sigma_variable_density.png}
+    \caption{Adaptive scale comparison on variable-density data in original 2D coordinates $(x,y)$. The local-scale affinities better respect regions with different sampling densities, while the fixed global scale is more brittle.}
+    \label{fig:adaptivesigma}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\textwidth]{final_pic/adaptive_sigma_metrics.png}
+    \caption{ARI for fixed global $\sigma$ and two local-scale variants. Local scaling helps on variable-density data and on $\{0,1,3,6\}$, but it is not uniformly better across digit tasks.}
+    \label{fig:adaptivesigmametrics}
+\end{figure}
+
 \subsection{Eigengap study}
-The eigengap heuristic selects $\hat{k} = \arg\max_i (\lambda_{i+1} - \lambda_i)$: the number of clusters is where the sorted eigenvalues of $L_\mathrm{sym}$ show the largest jump. Figure~\ref{fig:eigengap} evaluates this heuristic across five datasets. The left panel shows eigenvalue spectra on a \emph{log scale} (omitting $\lambda_1 = 0$); the right panel shows the raw eigengaps $\delta_i = \lambda_{i+1} - \lambda_i$ with dashed vertical lines at the true $k$.
+The eigengap heuristic selects $\hat{k} = \arg\max_i (\lambda_{i+1} - \lambda_i)$ using the eigenvalues of the symmetric normalized Laplacian
+\[
+L_{\mathrm{sym}} = I - D^{-1/2}WD^{-1/2}.
+\]
+This is the Laplacian form corresponding to the NJW normalized affinity $D^{-1/2}WD^{-1/2}$: small eigenvalues of $L_{\mathrm{sym}}$ correspond to large eigenvalues of the NJW matrix. Figure~\ref{fig:eigengap} evaluates this heuristic across several datasets. The left panel shows eigenvalue spectra on a \emph{log scale} (omitting $\lambda_1 = 0$); the right panel shows the raw eigengaps $\delta_i = \lambda_{i+1} - \lambda_i$ with dashed vertical lines at the true $k$.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{final_pic/eigengap_study.png}
-    \caption{Left: eigenvalue spectra of $L_\mathrm{sym}$ in log scale ($\lambda_1=0$ omitted; dashed lines mark the true $k$ per dataset). Right: eigengap $\delta_i = \lambda_{i+1} - \lambda_i$; the heuristic picks $k$ at the largest spike. The SBM spike at $i=3$ ($\delta_3 = 0.32$) is $9\times$ the next largest gap; the other four datasets produce only small, ambiguous gaps.}
+    \caption{Left: eigenvalue spectra of $L_\mathrm{sym}$ in log scale ($\lambda_1=0$ omitted; dashed lines mark the true $k$ per dataset). Right: eigengap $\delta_i = \lambda_{i+1} - \lambda_i$; the heuristic picks $k$ at the largest spike. The SBM spike at $i=3$ ($\delta_3 = 0.32$) is much larger than the gaps in the feature-space datasets.}
     \label{fig:eigengap}
 \end{figure}
 
-The four datasets tell qualitatively different stories:
+The main patterns are:
 
 \begin{itemize}[leftmargin=1.4em]
     \item \textbf{Stochastic block model ($k^*=3$):} Textbook success. $\lambda_2 \approx 0.17$, $\lambda_3 \approx 0.21$, $\lambda_4 \approx 0.52$, giving $\delta_3 = 0.32$---a $9\times$ ratio over the next largest gap. The heuristic unambiguously selects $k=3$, matching the planted community count.
 
     \item \textbf{Two moons and circles ($k^*=2$):} $\lambda_2 \approx 10^{-16}$ (numerically zero), signaling that the $k$-NN graph has two near-disconnected components---exactly the two manifold arms. The log-scale plot makes this visible as the bottom of the clipped axis; on linear scale these values are entirely hidden. However, the absolute gap $\delta_2 \approx 0.001$ is tiny. The heuristic would fail in absolute terms but the near-zero multiplicity is informative if interpreted correctly.
 
-    \item \textbf{Overlapping blobs ($k^*=3$):} No dominant gap. Eigenvalues increase gradually with no large jump near $i=3$. All consecutive gaps ($\delta_1 \approx 0.006$, $\delta_2 \approx 0.006$, $\delta_3 \approx 0.004$) are similar in magnitude. This is the expected behavior when clusters have heavy overlap: the graph does not exhibit a clean community structure, so no spectral gap forms.
-
     \item \textbf{Digits $\{0,1,3,6\}$ ($k^*=4$, $m=4$ neighbors):} The graph is fragmented into three near-disconnected components ($\lambda_2 \approx \lambda_3 \approx 10^{-16}$), hinting at only 3 clusters. The largest eigengap in the range shown appears near $i=6$ ($\delta_6 \approx 0.008$), which would lead the heuristic to predict $k=6$---far from the truth. This is partly a graph construction failure: 4 neighbors in 64-dimensional pixel space produces a fragile, over-sparse graph that breaks the local community structure.
 \end{itemize}
 
-The takeaway is sharper than the previous linear-scale view: the eigengap heuristic is \emph{reliably useful only when the planted community structure is strong} (SBM). For feature-space manifold datasets the gap values are tiny in absolute terms and hidden on a linear scale; for overlapping or high-dimensional datasets the heuristic can be actively misleading. Log scale is necessary to even diagnose whether any gap exists.
+The takeaway is sharper than the previous linear-scale view: the eigengap heuristic is \emph{reliably useful only when the planted community structure is strong} (SBM). For feature-space manifold datasets the gap values are tiny in absolute terms and hidden on a linear scale; for ambiguous or high-dimensional datasets the heuristic can be actively misleading. Log scale is necessary to even diagnose whether any gap exists.
+
+The sigma sweep in Figure~\ref{fig:sigmaeigengap} confirms that the digit eigengap behavior is also scale-sensitive. In particular, the estimated gap at the true $k$ can move substantially as $\sigma$ varies, and the largest-gap predicted $k$ need not match the label count. This supports treating the eigengap as a diagnostic rather than as an automatic model-selection rule for the digit experiments.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{final_pic/digits_sigma_eigengap_sweep.png}
+    \caption{Digit eigengap sensitivity to RBF scale. Curves show the eigengap after the true number of classes using $L_{\mathrm{sym}}$; the dashed gray curve tracks the largest-gap prediction for the $k$-NN RBF graph.}
+    \label{fig:sigmaeigengap}
+\end{figure}
 
 \subsection{Graph construction ablation}
 The strongest additional lesson is that graph construction is the primary inductive bias. We ablate three affinity matrix designs, each placing a different locality prior on the similarity structure.
 
 \paragraph{Dense RBF (Gaussian kernel).}
 \[
-W_{ij}^{\mathrm{dense}} = \exp\!\left(-\gamma \lVert x_i-x_j\rVert_2^2\right), \quad \gamma = \frac{1}{2\hat{\sigma}^2},
+W_{ij}^{\mathrm{dense}} = \exp\!\left(-\frac{\lVert x_i-x_j\rVert_2^2}{2\sigma^2}\right),
 \]
-where $\hat{\sigma}^2$ is estimated from the data (e.g.\ median pairwise squared distance). Every pair of points receives a positive edge weight; the resulting graph is fully connected and $W^{\mathrm{dense}}$ is dense. This kernel is parameter-efficient but loses directional locality information: points on the same manifold arm and points on different arms may receive similar weights if their Euclidean distances happen to be close.
+where $\sigma$ is the global RBF scale. Every pair of points receives a positive edge weight; the resulting graph is fully connected and $W^{\mathrm{dense}}$ is dense. This kernel is parameter-efficient but loses directional locality information: points on the same manifold arm and points on different arms may receive similar weights if their Euclidean distances happen to be close.
 
 \paragraph{Union $k$-NN with RBF weights.}
 \[
-W_{ij}^{\mathrm{kNN}} = \mathbf{1}\!\left\{j\in \mathcal{N}_m(i) \;\text{or}\; i\in \mathcal{N}_m(j)\right\} \cdot \exp\!\left(-\gamma \lVert x_i-x_j\rVert_2^2\right),
+W_{ij}^{\mathrm{kNN}} = \mathbf{1}\!\left\{j\in \mathcal{N}_m(i) \;\text{or}\; i\in \mathcal{N}_m(j)\right\} \cdot \exp\!\left(-\frac{\lVert x_i-x_j\rVert_2^2}{2\sigma^2}\right),
 \]
 where $\mathcal{N}_m(i)$ is the directed set of the $m$ nearest neighbors of $i$. The union rule guarantees that $W^{\mathrm{kNN}}$ is symmetric and that each node has degree at least $m$, so the graph stays connected for reasonable $m$. The $k$-NN mask restricts attention to locally relevant pairs, preserving manifold topology.
 
 \paragraph{Mutual $k$-NN with RBF weights.}
 \[
-W_{ij}^{\mathrm{mutual}} = \mathbf{1}\!\left\{j\in \mathcal{N}_m(i) \;\text{and}\; i\in \mathcal{N}_m(j)\right\} \cdot \exp\!\left(-\gamma \lVert x_i-x_j\rVert_2^2\right).
+W_{ij}^{\mathrm{mutual}} = \mathbf{1}\!\left\{j\in \mathcal{N}_m(i) \;\text{and}\; i\in \mathcal{N}_m(j)\right\} \cdot \exp\!\left(-\frac{\lVert x_i-x_j\rVert_2^2}{2\sigma^2}\right).
 \]
 Only mutual neighbors share an edge. This produces the sparsest graph; it can disconnect if $m$ is small or the data are irregularly sampled. The mutual constraint eliminates asymmetric neighbors that arise from density differences, making the graph more robust to cluster imbalance---but at the cost of connectivity.
 
@@ -585,16 +633,6 @@ Figure~\ref{fig:graphablation} shows the ARI for each combination. On manifold d
     \caption{Graph construction ablation across three datasets. Dense RBF dominates on nearly convex digit clusters; local $k$-NN graphs dominate on non-convex manifolds. Mutual $k$-NN can become too sparse on high-dimensional digit data.}
     \label{fig:graphablation}
 \end{figure}
-
-% \subsection{Graph fragility archetypes}
-% Figure~\ref{fig:failuretaxonomy} collects three interpretable fragility modes. First, too few neighbors can fragment a manifold graph. Second, a long thin bridge of intermediate points can remove the clean low-density separation between two masses. Third, varying density and imbalance can make a single global neighborhood scale inappropriate. The point of this figure is not that spectral clustering always fails on such inputs; rather, it illustrates how fixed graph parameters can become mismatched to the local geometry of the data.
-
-% \begin{figure}[H]
-%     \centering
-%     \includegraphics[width=\textwidth]{final_pic/failure_taxonomy.png}
-%     \caption{Three graph-fragility archetypes in original 2D coordinates $(x,y)$: graph fragmentation, a long thin bridge, and varying-density geometry.}
-%     \label{fig:failuretaxonomy}
-% \end{figure}
 
 \subsection{Runtime bottleneck breakdown}
 Figure~\ref{fig:bottleneck} expands the computational scaling analysis by decomposing spectral clustering runtime into graph construction, eigensolver, and final $k$-means-on-embedding stages, and overlays the plain $k$-means baseline from the same benchmark. For the largest sizes tested, the spectral total almost exactly tracks eigensolver time, while the baseline remains much smaller. This agrees with the theoretical discussion: once a sparse graph has been built, the expensive stage is extracting the relevant eigenvectors of a large sparse Laplacian.
@@ -625,6 +663,58 @@ python run_all.py
 \end{verbatim}
 regenerates all figures in \texttt{final\_pic/} and all tables/CSVs in \texttt{results/}. The workspace is structured so it can be extended easily with additional datasets or parameter sweeps.
 
+\appendix
+
+\section{Stress-case diagnostics}
+Table~\ref{tab:stressappendix} reports the two synthetic stress cases that were kept out of the main-body synthetic table to save space. These examples are useful diagnostics, but they are not clean success/failure archetypes.
+
+\begin{table}[H]
+\centering
+\caption{Synthetic stress-case diagnostics. ARI is reported for both methods.}
+\label{tab:stressappendix}
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.2cm}ccp{5.1cm}}
+\toprule
+Dataset & Spectral ARI & $k$-means ARI & Comment \\
+\midrule
+Overlapping blobs & 0.302 & 0.254 & Heavy overlap makes the reference partition ambiguous in the observed 2D features. \\
+Bridge stress & 0.552 & 0.532 & The bridge points make the intended endpoint partition only partially visible to the graph. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{final_pic/overlapping_groundtruth_kmeans_njw.png}
+    \caption{Overlapping-blobs stress case in original 2D coordinates $(x,y)$, shown as ground truth (left), $k$-means (middle), and NJW spectral clustering (right). Because the classes overlap strongly in feature space, neither method has a clean geometric boundary that exactly matches the reference labels.}
+    \label{fig:failure_overlap}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{final_pic/bridge_groundtruth_kmeans_njw.png}
+    \caption{Bridge-connected stress case in original 2D coordinates $(x,y)$, shown as ground truth (left), $k$-means (middle), and NJW spectral clustering (right). The endpoint masses remain visually separable, but the bridge creates ambiguous assignments near the connection.}
+    \label{fig:failure2}
+\end{figure}
+
+The bridge-connected example is also a useful reminder that a visually plausible 2D partition need not yield a high pairwise clustering score. Comparing the three panels in Figure~\ref{fig:failure2}, the two endpoint masses look separable at a glance, but the bridge region generates many ambiguous labels for both algorithms. Because ARI evaluates agreement at the level of point pairs rather than only the gross shape of the partition, disagreements on bridge points can induce many pairwise inconsistencies. The stress case is therefore not random labeling everywhere; it is a structured mismatch between the graph-induced cut and the intended reference partition.
+
+\section{Sparsification tradeoff}
+The $k$-NN graph is computationally attractive because it stores only local edges. Figure~\ref{fig:sparseparetoruntime} varies the graph degree $m$ and compares the resulting ARI against total runtime, while Figure~\ref{fig:sparseparetoedges} compares ARI against the number of nonzero affinity entries. Dense RBF appears as a reference point for each dataset.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\textwidth]{final_pic/sparsification_pareto_runtime.png}
+    \caption{Sparsification tradeoff: ARI versus total runtime as the $k$-NN graph degree $m$ varies. Dense RBF reference points show the cost of keeping all pairwise affinities.}
+    \label{fig:sparseparetoruntime}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\textwidth]{final_pic/sparsification_pareto_edges.png}
+    \caption{Sparsification tradeoff: ARI versus the number of nonzero affinity entries. Sparse $k$-NN graphs can preserve or improve performance while using far fewer stored edges, although the best degree is dataset-dependent.}
+    \label{fig:sparseparetoedges}
+\end{figure}
+
 \begin{thebibliography}{9}
 
 \bibitem{ng2001spectral}
@@ -641,6 +731,11 @@ Jianbo Shi and Jitendra Malik.
 Ulrike von Luxburg.
 \newblock A tutorial on spectral clustering.
 \newblock \emph{Statistics and Computing}, 17(4):395--416, 2007.
+
+\bibitem{zelnik2004selftuning}
+Lihi Zelnik-Manor and Pietro Perona.
+\newblock Self-tuning spectral clustering.
+\newblock In \emph{Advances in Neural Information Processing Systems 17}, 2004.
 
 \bibitem{hubert1985comparing}
 Lawrence Hubert and Phipps Arabie.

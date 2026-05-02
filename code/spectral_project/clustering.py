@@ -8,7 +8,8 @@ from scipy.linalg import eigh
 from scipy.sparse import csr_matrix, diags, issparse
 from scipy.sparse.linalg import eigsh
 from sklearn.cluster import KMeans
-from sklearn.neighbors import kneighbors_graph
+from sklearn.metrics import pairwise_distances
+from sklearn.neighbors import NearestNeighbors, kneighbors_graph
 
 
 @dataclass
@@ -31,6 +32,29 @@ class KMeansResult:
 def _sparse_memory_bytes(A: csr_matrix) -> int:
     A = A.tocsr()
     return int(A.data.nbytes + A.indices.nbytes + A.indptr.nbytes)
+
+
+def gamma_from_sigma(sigma: float) -> float:
+    """Convert the paper's RBF scale sigma into exp(-gamma * distance^2)."""
+    return 1.0 / (2.0 * max(float(sigma) ** 2, 1e-12))
+
+
+def median_pairwise_distance(X: np.ndarray) -> float:
+    D = pairwise_distances(X)
+    vals = D[D > 1e-12]
+    return float(np.median(vals)) if vals.size else 1.0
+
+
+def median_knn_distance(X: np.ndarray, n_neighbors: int) -> float:
+    G = kneighbors_graph(
+        X,
+        n_neighbors=n_neighbors,
+        mode="distance",
+        include_self=False,
+        metric="minkowski",
+        p=2,
+    ).tocsr()
+    return float(np.median(G.data)) if G.data.size else 1.0
 
 
 
@@ -62,6 +86,15 @@ def knn_rbf_affinity_sparse(
     W.setdiag(0.0)
     W.eliminate_zeros()
     return W
+
+
+def knn_rbf_affinity_sigma_sparse(
+    X: np.ndarray,
+    n_neighbors: int = 10,
+    sigma: float = 1.0,
+) -> csr_matrix:
+    """Build a symmetric sparse kNN RBF affinity using exp(-d^2 / (2 sigma^2))."""
+    return knn_rbf_affinity_sparse(X, n_neighbors=n_neighbors, gamma=gamma_from_sigma(sigma))
 
 
 
@@ -208,6 +241,55 @@ def dense_rbf_affinity(X: np.ndarray, gamma: float | None = None) -> np.ndarray:
         gamma = 1.0 / max(sigma2, 1e-12)
     W = np.exp(-gamma * sq)
     np.fill_diagonal(W, 0.0)
+    return W
+
+
+def dense_rbf_affinity_sigma(X: np.ndarray, sigma: float) -> np.ndarray:
+    """Fully connected RBF affinity using exp(-d^2 / (2 sigma^2))."""
+    return dense_rbf_affinity(X, gamma=gamma_from_sigma(sigma))
+
+
+def self_tuning_affinity(
+    X: np.ndarray,
+    local_neighbors: int = 7,
+    mode: str = "nth",
+    n_neighbors: int | None = None,
+) -> np.ndarray | csr_matrix:
+    """Local-scale affinity from Zelnik-Manor/Perona, optionally sparsified.
+
+    mode="nth" sets sigma_i to the distance to the local_neighbors-th neighbor.
+    mode="mean" sets sigma_i to the mean distance over those neighbors.
+    """
+    n = X.shape[0]
+    p = min(max(local_neighbors, 1), n - 1)
+    nn = NearestNeighbors(n_neighbors=p + 1, metric="minkowski", p=2).fit(X)
+    dists, inds = nn.kneighbors(X)
+    local_dists = dists[:, 1:]
+    if mode == "nth":
+        sigma = local_dists[:, -1]
+    elif mode == "mean":
+        sigma = local_dists.mean(axis=1)
+    else:
+        raise ValueError(f"unknown local scale mode: {mode}")
+    sigma = np.maximum(sigma, 1e-12)
+
+    if n_neighbors is None:
+        D = pairwise_distances(X)
+        denom = np.outer(sigma, sigma)
+        W = np.exp(-np.square(D) / np.maximum(denom, 1e-12))
+        np.fill_diagonal(W, 0.0)
+        return W
+
+    m = min(max(n_neighbors, 1), n - 1)
+    rows = np.repeat(np.arange(n), m)
+    cols = inds[:, 1:m + 1].ravel()
+    vals = dists[:, 1:m + 1].ravel()
+    denom = sigma[rows] * sigma[cols]
+    weights = np.exp(-np.square(vals) / np.maximum(denom, 1e-12))
+    W = csr_matrix((weights, (rows, cols)), shape=(n, n))
+    W = W.maximum(W.T).tocsr()
+    W.setdiag(0.0)
+    W.eliminate_zeros()
     return W
 
 

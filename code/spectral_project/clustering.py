@@ -6,7 +6,7 @@ from time import perf_counter
 import numpy as np
 from scipy.linalg import eigh
 from scipy.sparse import csr_matrix, diags, issparse
-from scipy.sparse.linalg import eigsh
+from scipy.sparse.linalg import ArpackNoConvergence, eigsh
 from sklearn.cluster import KMeans
 from sklearn.metrics import pairwise_distances
 from sklearn.neighbors import NearestNeighbors, kneighbors_graph
@@ -56,6 +56,18 @@ def median_knn_distance(X: np.ndarray, n_neighbors: int) -> float:
         p=2,
     ).tocsr()
     return float(np.median(G.data)) if G.data.size else 1.0
+
+
+def median_knn_squared_distance(X: np.ndarray, n_neighbors: int) -> float:
+    G = kneighbors_graph(
+        X,
+        n_neighbors=n_neighbors,
+        mode="distance",
+        include_self=False,
+        metric="minkowski",
+        p=2,
+    ).tocsr()
+    return float(np.median(np.square(G.data))) if G.data.size else 1.0
 
 
 
@@ -115,15 +127,23 @@ def normalized_laplacian_dense(W: np.ndarray) -> np.ndarray:
     inv_sqrt = np.zeros_like(d)
     mask = d > 1e-12
     inv_sqrt[mask] = 1.0 / np.sqrt(d[mask])
-    Dm = np.diag(inv_sqrt)
-    return np.eye(W.shape[0]) - Dm @ W @ Dm
+    return np.eye(W.shape[0]) - (inv_sqrt[:, None] * W * inv_sqrt[None, :])
 
 
 
 def _topk_smallest_eigenvectors(L: csr_matrix | np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
     if issparse(L):
-        v0 = np.linspace(1.0, 2.0, L.shape[0])
-        vals, U = eigsh(L, k=k, which="SM", v0=v0)
+        n = L.shape[0]
+        try:
+            vals, U = eigsh(L, k=k, which="SM", tol=1e-6, maxiter=max(10 * n, 10000))
+        except ArpackNoConvergence as exc:
+            if exc.eigenvalues is not None and exc.eigenvectors is not None and len(exc.eigenvalues) >= k:
+                vals, U = exc.eigenvalues[:k], exc.eigenvectors[:, :k]
+            elif n <= 2500:
+                vals, U = eigh(L.toarray())
+                return vals[:k], U[:, :k]
+            else:
+                raise
         order = np.argsort(vals)
         return vals[order], U[:, order]
     vals, U = eigh(L)
@@ -228,51 +248,38 @@ def ng_jordan_weiss(
 ) -> SpectralResult:
     memory: dict[str, int] = {"X": int(X.nbytes)}
 
+    effective_gamma = gamma
+    if effective_gamma is None:
+        sigma2_default = median_knn_squared_distance(X, n_neighbors=n_neighbors)
+        effective_gamma = 1.0 / max(sigma2_default, 1e-12)
+
+    timings: dict[str, float] = {}
+    t0 = perf_counter()
+    W_sparse = knn_rbf_affinity_sparse(X, n_neighbors=n_neighbors, gamma=effective_gamma)
+    timings["graph_seconds"] = perf_counter() - t0
+    t1 = perf_counter()
+    vals, Y, affinity, mem = _spectral_embedding_from_sparse_affinity(W_sparse, n_clusters, dense_threshold)
+    timings["eigensolver_seconds"] = perf_counter() - t1
+    memory.update(mem)
+    t2 = perf_counter()
+    labels = KMeans(n_clusters=n_clusters, n_init=n_init, random_state=random_state).fit_predict(Y)
+    timings["kmeans_seconds"] = perf_counter() - t2
+    timings["total_seconds"] = timings["graph_seconds"] + timings["eigensolver_seconds"] + timings["kmeans_seconds"]
+
     if gamma is None:
-        t_search = perf_counter()
-        best = select_sigma_by_embedding_distortion(
-            X,
-            n_clusters=n_clusters,
-            n_neighbors=n_neighbors,
-            random_state=random_state,
-            n_init=n_init,
-            dense_threshold=dense_threshold,
-        )
-        timings = {
-            "graph_seconds": best["graph_seconds"],
-            "eigensolver_seconds": best["eigensolver_seconds"],
-            "kmeans_seconds": best["kmeans_seconds"],
-            "sigma_search_seconds": perf_counter() - t_search,
-        }
-        timings["total_seconds"] = timings["sigma_search_seconds"]
-        memory.update(best["memory"])
-        Y = best["embedding"]
-        labels = best["labels"]
-        vals = best["eigenvalues"]
-        affinity = best["affinity"]
         parameters = {
-            "sigma_mode": "embedding_distortion_search",
-            "sigma_alpha": best["alpha"],
-            "sigma_base_distance": best["base_distance"],
-            "sigma": best["sigma"],
-            "gamma": best["gamma"],
-            "embedding_distortion": best["distortion"],
+            "sigma_mode": "median_retained_edge_scale",
+            "sigma": float(np.sqrt(1.0 / (2.0 * effective_gamma))),
+            "gamma": float(effective_gamma),
             "n_neighbors": n_neighbors,
         }
     else:
-        timings: dict[str, float] = {}
-        t0 = perf_counter()
-        W_sparse = knn_rbf_affinity_sparse(X, n_neighbors=n_neighbors, gamma=gamma)
-        timings["graph_seconds"] = perf_counter() - t0
-        t1 = perf_counter()
-        vals, Y, affinity, mem = _spectral_embedding_from_sparse_affinity(W_sparse, n_clusters, dense_threshold)
-        timings["eigensolver_seconds"] = perf_counter() - t1
-        memory.update(mem)
-        t2 = perf_counter()
-        labels = KMeans(n_clusters=n_clusters, n_init=n_init, random_state=random_state).fit_predict(Y)
-        timings["kmeans_seconds"] = perf_counter() - t2
-        timings["total_seconds"] = timings["graph_seconds"] + timings["eigensolver_seconds"] + timings["kmeans_seconds"]
-        parameters = {"sigma_mode": "fixed_gamma", "gamma": gamma, "n_neighbors": n_neighbors}
+        parameters = {
+            "sigma_mode": "fixed_gamma",
+            "sigma": float(np.sqrt(1.0 / (2.0 * effective_gamma))) if effective_gamma > 0 else np.nan,
+            "gamma": float(effective_gamma),
+            "n_neighbors": n_neighbors,
+        }
 
     memory["embedding"] = int(Y.nbytes)
 

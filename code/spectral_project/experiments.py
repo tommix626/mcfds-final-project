@@ -75,10 +75,10 @@ FAILURE_NEIGHBORS = {
 }
 
 DIGITS_SPECS = [
-    ("digits_01", (0, 1), 2, 3),
-    ("digits_17", (1, 7), 2, 3),
-    ("digits_0136", (0, 1, 3, 6), 4, 4),
-    ("digits_all", tuple(range(10)), 10, 6),
+    ("digits_01", (0, 1), 2, 16),
+    ("digits_17", (1, 7), 2, 24),
+    ("digits_0136", (0, 1, 3, 6), 4, 10),
+    ("digits_all", tuple(range(10)), 10, 10),
 ]
 
 
@@ -170,7 +170,13 @@ def run_real_data(random_state: int = 0) -> pd.DataFrame:
             Xd, yd = X_all, y_all
         else:
             Xd, yd = load_digits_subset(classes=classes, random_state=random_state)
-        spec = ng_jordan_weiss(Xd, n_clusters=k, n_neighbors=neighbors, random_state=random_state)
+        spec = ng_jordan_weiss(
+            Xd,
+            n_clusters=k,
+            n_neighbors=neighbors,
+            random_state=random_state,
+            dense_threshold=Xd.shape[0] + 1,
+        )
         km = kmeans_baseline(Xd, n_clusters=k, random_state=random_state)
         expectation = "Digits form semantically meaningful but imperfect clusters; graph construction matters strongly here."
         rows.append(_record_rows(name, "digits", expectation, "spectral", yd, spec.labels, {**spec.timings, **{f"param_{kk}": vv for kk, vv in spec.parameters.items()}}))
@@ -548,7 +554,7 @@ def run_failure_comparison_figures(random_state: int = 0) -> None:
         )
 
 
-SIGMA_ALPHAS = [0.10, 0.20, 0.35, 0.50, 0.70, 1.00, 1.40, 2.00, 3.00, 5.00]
+SIGMA_ALPHAS = [0.10, 0.20, 0.35, 0.50, 0.70, 1 / np.sqrt(2), 1.00, 1.40, 2.00, 3.00, 5.00]
 SPARSIFICATION_NEIGHBORS = [2, 3, 4, 6, 8, 10, 12, 16, 24, 32, 48]
 SPARSIFICATION_REPEATS = 5
 
@@ -599,13 +605,15 @@ def _variable_density_data(random_state: int = 0):
 
 def _run_affinity_configuration(W, y, k, random_state: int, graph_seconds: float, extra: dict) -> dict:
     row = dict(extra)
+    exact_eigendecomp = bool(row.pop("exact_eigendecomp", False))
     row["graph_seconds"] = graph_seconds
     row["affinity_bytes"] = _affinity_bytes(W)
     row["nnz_affinity"] = int(W.nnz if issparse(W) else np.count_nonzero(W))
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            spec = spectral_from_affinity(W, n_clusters=k, random_state=random_state)
+            affinity = W.toarray() if exact_eigendecomp and issparse(W) else W
+            spec = spectral_from_affinity(affinity, n_clusters=k, random_state=random_state)
         row.update(summarize(y, spec.labels))
         row["eigensolver_seconds"] = spec.timings.get("eigensolver_seconds", np.nan)
         row["post_kmeans_seconds"] = spec.timings.get("kmeans_seconds", np.nan)
@@ -671,6 +679,7 @@ def run_sigma_sweep(random_state: int = 0) -> pd.DataFrame:
                         "sigma": sigma,
                         "gamma": gamma_from_sigma(sigma),
                         "n_neighbors": nn if graph == "knn_rbf" else np.nan,
+                        "exact_eigendecomp": family == "digits",
                     },
                 ))
 
